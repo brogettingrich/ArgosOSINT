@@ -14,7 +14,7 @@
     <div class="brand-wrapper">
       <div class="brand-logo"></div>
       <div class="brand-title">ARGOS<span style="color:var(--text-secondary);font-weight:400;">OSINT</span></div>
-      <span class="brand-badge">RECON ENGINE</span>
+      <span class="brand-badge">PRECISION PROBE ENGINE</span>
     </div>
     <nav class="nav-tabs">
       <button class="nav-tab-btn active" data-target="view-scanner">Scanner</button>
@@ -29,14 +29,18 @@
       <div class="search-card">
         <div class="card-header-row">
           <div class="card-title">Target Intelligence Parameters</div>
-          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">ACTIVE_CORRELATION_V1</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">MULTI_ALIAS_ACTIVE</div>
         </div>
 
         <form id="scan-form">
           <div class="grid-inputs">
             <div class="input-group">
               <label class="input-label">Username / Handle</label>
-              <input type="text" id="input-username" class="form-input" placeholder="e.g. elonmusk, user...34">
+              <input type="text" id="input-username" class="form-input" placeholder="e.g. account_loading, elonmusk">
+            </div>
+            <div class="input-group">
+              <label class="input-label">Known Names / Aliases (Comma-Separated)</label>
+              <input type="text" id="input-name" class="form-input" placeholder="e.g. Name1, Name2, Alias3">
             </div>
             <div class="input-group">
               <label class="input-label">Email Address (Optional)</label>
@@ -46,10 +50,6 @@
               <label class="input-label">Phone Number (Optional)</label>
               <input type="text" id="input-phone" class="form-input" placeholder="+1 555-0199">
             </div>
-            <div class="input-group">
-              <label class="input-label">Real / Display Name</label>
-              <input type="text" id="input-name" class="form-input" placeholder="Context matching clue">
-            </div>
           </div>
 
           <div class="permutation-bar" id="permutation-preview-bar"></div>
@@ -57,7 +57,7 @@
           <div class="options-row">
             <label class="checkbox-label">
               <input type="checkbox" id="chk-fuzzy">
-              <span>Enable Fuzzy Permutations (Scan dot/underscore variants and typo aliases)</span>
+              <span>Enable Full Permutations (Trailing letter doubling like loadingg, separator swaps, and typo matrix)</span>
             </label>
             <button type="submit" class="btn-launch-scan">
               <span>Launch Recon Probe</span>
@@ -69,8 +69,11 @@
       <!-- Live Telemetry & Progress -->
       <div class="progress-panel" id="progress-panel">
         <div class="progress-header">
-          <span id="progress-detail">Initializing asynchronous worker pool...</span>
-          <span id="progress-percent">0%</span>
+          <span id="progress-detail">Initializing probe stream...</span>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span id="progress-percent">0%</span>
+            <button id="btn-dismiss-scan" class="btn-dismiss-link" title="Dismiss Session">Dismiss</button>
+          </div>
         </div>
         <div class="progress-bar-bg">
           <div class="progress-bar-fill" id="progress-bar-fill"></div>
@@ -81,6 +84,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;">
         <h3 id="findings-count" style="font-size:15px;font-weight:600;">Discovered Accounts</h3>
         <div style="display:flex;gap:8px;">
+          <button id="btn-reset-results" class="btn-profile-link" style="padding:4px 10px;font-size:11px;display:none;">Reset Grid</button>
           <button id="btn-export-json" class="btn-profile-link" style="padding:4px 10px;font-size:11px;">Export JSON</button>
           <button id="btn-export-html" class="btn-profile-link" style="padding:4px 10px;font-size:11px;">Export HTML</button>
         </div>

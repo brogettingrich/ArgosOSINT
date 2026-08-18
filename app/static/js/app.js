@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPermutationPreview();
   setupFormSubmit();
   setupFilterChips();
+  setupDismissControls();
 });
 
 function setupNavigation() {
@@ -43,6 +44,34 @@ function setupFilterChips() {
   });
 }
 
+function setupDismissControls() {
+  const dismissBtn = document.getElementById('btn-dismiss-scan');
+  const resetBtn = document.getElementById('btn-reset-results');
+
+  const doDismiss = () => {
+    if (currentEventSource) {
+      currentEventSource.close();
+      currentEventSource = null;
+    }
+    document.getElementById('progress-panel').style.display = 'none';
+    document.getElementById('progress-bar-fill').style.width = '0%';
+    document.getElementById('progress-percent').innerText = '0%';
+  };
+
+  if (dismissBtn) dismissBtn.addEventListener('click', doDismiss);
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      doDismiss();
+      currentFindings = [];
+      currentEmailInfo = null;
+      currentPhoneInfo = null;
+      document.getElementById('findings-count').innerText = '0 Findings';
+      renderFindingsGrid();
+      resetBtn.style.display = 'none';
+    });
+  }
+}
+
 function setupPermutationPreview() {
   const usernameInput = document.getElementById('input-username');
   const previewBar = document.getElementById('permutation-preview-bar');
@@ -57,7 +86,7 @@ function setupPermutationPreview() {
       return;
     }
     debounceTimer = setTimeout(async () => {
-      const data = await API.getPermutations(val, 10);
+      const data = await API.getPermutations(val, 15);
       if (data.permutations) {
         previewBar.innerHTML = data.permutations.map(p => `
           <span class="perm-chip ${p.is_seed ? 'seed' : ''}">
@@ -108,11 +137,12 @@ function startReconScan() {
   document.getElementById('results-grid').innerHTML = '';
   document.getElementById('progress-panel').style.display = 'block';
   document.getElementById('findings-count').innerText = '0 Findings';
+  document.getElementById('btn-reset-results').style.display = 'inline-block';
 
   if (currentEventSource) currentEventSource.close();
 
   const params = new URLSearchParams({
-    username, email, phone, real_name: realName, fuzzy, max_perms: 12
+    username, email, phone, real_name: realName, fuzzy, max_perms: 15
   });
 
   currentEventSource = new EventSource(`/api/scan/stream?${params.toString()}`);
@@ -134,7 +164,7 @@ function startReconScan() {
       const res = data.result;
       const progress = data.progress;
       document.getElementById('progress-percent').innerText = `${progress.percent}%`;
-      document.getElementById('progress-detail').innerText = `${progress.completed}/${progress.total} Probes (${res.site})`;
+      document.getElementById('progress-detail').innerText = `Probing ${res.site} (@${res.username})...`;
       document.getElementById('progress-bar-fill').style.width = `${progress.percent}%`;
 
       if (res.found) {
@@ -150,12 +180,14 @@ function startReconScan() {
     if (data.type === 'complete') {
       currentEventSource.close();
       document.getElementById('progress-detail').innerText = 'Reconnaissance Complete';
+      renderFindingsGrid();
     }
   };
 
   currentEventSource.onerror = () => {
     if (currentEventSource) currentEventSource.close();
-    document.getElementById('progress-detail').innerText = 'Scan session complete.';
+    document.getElementById('progress-detail').innerText = 'Reconnaissance Complete';
+    renderFindingsGrid();
   };
 }
 
@@ -177,8 +209,21 @@ function renderFindingsGrid() {
     return item.category === activeFilter;
   });
 
-  // Sort exact matches first, then by match score
   filtered.sort((a, b) => (b.is_seed ? 1 : 0) - (a.is_seed ? 1 : 0));
+
+  if (filtered.length === 0 && (!currentEmailInfo || !currentEmailInfo.valid_syntax) && (!currentPhoneInfo || !currentPhoneInfo.valid)) {
+    const empty = document.createElement('div');
+    empty.style.gridColumn = '1 / -1';
+    empty.style.padding = '30px';
+    empty.style.textAlign = 'center';
+    empty.style.color = 'var(--text-muted)';
+    empty.style.background = 'var(--bg-card)';
+    empty.style.border = '1px solid var(--border-color)';
+    empty.style.borderRadius = '10px';
+    empty.innerText = 'No active accounts discovered for this filter criteria.';
+    grid.appendChild(empty);
+    return;
+  }
 
   filtered.forEach(item => addFindingCard(item));
 }
@@ -188,6 +233,7 @@ function addFindingCard(item) {
   const card = document.createElement('div');
   card.className = 'target-card';
   const corrob = item.corroboration || { score: 50, verdict: 'VERIFIED' };
+  const aliasTag = corrob.matched_alias ? `<span class="alias-tag">Matched: ${corrob.matched_alias}</span>` : '';
 
   card.innerHTML = `
     <div class="card-top">
@@ -200,6 +246,7 @@ function addFindingCard(item) {
       </span>
     </div>
     <div class="account-handle">Handle: <strong>@${item.username}</strong></div>
+    ${aliasTag}
     <a href="${item.profile_url}" target="_blank" rel="noopener" class="btn-profile-link">
       Open Profile [↗]
     </a>

@@ -1,5 +1,5 @@
 import re
-from typing import List, Set, Dict, Any
+from typing import List, Dict, Any
 
 LEET_MAP = {
     'o': ['0'],
@@ -16,8 +16,8 @@ LEET_MAP = {
     '7': ['t'],
 }
 
-COMMON_PREFIXES = ['real', 'official', 'the', 'its', 'iam']
-COMMON_SUFFIXES = ['_', '__', '.', 'dev', 'yt', 'tv', 'official', 'real', '123', '01', '99']
+COMMON_PREFIXES = ['real', 'official', 'the', 'its', 'iam', 'im']
+COMMON_SUFFIXES = ['_', '__', '.', 'dev', 'yt', 'tv', 'official', 'real', '123', '01', '99', 'x', 'xx']
 
 def clean_username(raw: str) -> str:
     """Strip whitespace and lowercase."""
@@ -41,11 +41,14 @@ def calculate_levenshtein(s1: str, s2: str) -> int:
         previous_row = current_row
     return previous_row[-1]
 
-def generate_permutations(seed: str, max_variations: int = 40) -> List[Dict[str, Any]]:
+def generate_permutations(seed: str, max_variations: int = 50) -> List[Dict[str, Any]]:
     """
-    Generates intelligent fuzzy permutations for a username.
-    Handles dot compression (user...34 -> user..34, user.34),
-    separator substitution (_ vs . vs -), leetspeak, and padding.
+    Generates an exhaustive fuzzy permutation matrix:
+    - Trailing letter doubling (loading -> loadingg, loadinggg)
+    - Internal character elongation (ninja -> ninjaa, ninnja)
+    - Dot compression & separator swaps (_ vs . vs -)
+    - Number extraction and shifting
+    - Suffix/Prefix additions
     """
     seed_clean = clean_username(seed)
     if not seed_clean:
@@ -58,7 +61,6 @@ def generate_permutations(seed: str, max_variations: int = 40) -> List[Dict[str,
             return
         if name not in results:
             dist = calculate_levenshtein(seed_clean, name)
-            # Similarity ratio (0.0 to 1.0)
             max_len = max(len(seed_clean), len(name))
             similarity = round(1.0 - (dist / max_len), 2)
             results[name] = {
@@ -72,26 +74,21 @@ def generate_permutations(seed: str, max_variations: int = 40) -> List[Dict[str,
     # 1. Exact Seed
     add_var(seed_clean, "exact_seed")
 
-    # 2. Repeated Dot / Punctuation Compression & Variations
-    # e.g., user...34 -> user..34, user.34, user34
+    # 2. Trailing Character Doubling / Elongation (e.g. account_loading -> account_loadingg, account_loadinggg)
+    last_char = seed_clean[-1]
+    if last_char.isalpha():
+        add_var(f"{seed_clean}{last_char}", "trailing_double_char")
+        add_var(f"{seed_clean}{last_char}{last_char}", "trailing_triple_char")
+
+    # 3. Repeated Dot / Punctuation Compression
     if re.search(r'\.{2,}', seed_clean):
-        # 2 dots
         add_var(re.sub(r'\.{2,}', '..', seed_clean), "double_dot")
-        # 1 dot
         add_var(re.sub(r'\.{2,}', '.', seed_clean), "single_dot")
-        # stripped dot
         add_var(re.sub(r'\.+', '', seed_clean), "stripped_dots")
-        # replace dots with underscore or hyphen
         add_var(re.sub(r'\.+', '_', seed_clean), "dots_to_underscore")
         add_var(re.sub(r'\.+', '-', seed_clean), "dots_to_hyphen")
 
-    # 3. Repeated Underscores / Hyphens
-    if re.search(r'_{2,}', seed_clean):
-        add_var(re.sub(r'_{2,}', '_', seed_clean), "single_underscore")
-        add_var(re.sub(r'_+', '.', seed_clean), "underscore_to_dot")
-        add_var(re.sub(r'_+', '', seed_clean), "stripped_underscores")
-
-    # 4. Separator swaps
+    # 4. Separator Swaps & Removals (_ vs . vs -)
     if '.' in seed_clean and '_' not in seed_clean:
         add_var(seed_clean.replace('.', '_'), "dot_to_underscore")
         add_var(seed_clean.replace('.', '-'), "dot_to_hyphen")
@@ -107,25 +104,44 @@ def generate_permutations(seed: str, max_variations: int = 40) -> List[Dict[str,
         add_var(seed_clean.replace('-', '.'), "hyphen_to_dot")
         add_var(seed_clean.replace('-', ''), "remove_hyphens")
 
-    # 5. Number extraction and shifting (e.g., user34 -> user034, user_34, user.34)
+    # 5. Word-boundary / Internal letter doubling for multi-word handles (e.g., account_loading -> account_loadingg, accountt_loading)
+    parts = re.split(r'([._\-])', seed_clean)
+    if len(parts) > 1:
+        # Doubled last char of first word
+        first_word = parts[0]
+        if first_word and first_word[-1].isalpha():
+            mod_first = first_word + first_word[-1]
+            add_var(mod_first + "".join(parts[1:]), "first_word_elongation")
+        # Doubled last char of last word
+        last_word = parts[-1]
+        if last_word and last_word[-1].isalpha():
+            mod_last = last_word + last_word[-1]
+            add_var("".join(parts[:-1]) + mod_last, "last_word_elongation")
+
+    # 6. Digit Separation & Zero-padding
     num_match = re.search(r'^(.*?)(\d+)$', seed_clean)
     if num_match:
         stem, num = num_match.groups()
         if stem:
-            # Separator before digits
             add_var(f"{stem}_{num}", "separated_digits_underscore")
             add_var(f"{stem}.{num}", "separated_digits_dot")
-            # Zero-padded digits (e.g. user7 -> user07)
             if len(num) == 1:
                 add_var(f"{stem}0{num}", "zero_padded_num")
                 add_var(f"{stem}_0{num}", "zero_padded_num_underscore")
 
-    # 6. Stripping trailing/leading underscores/dots
+    # 7. Common Suffixes & Prefixes
     stripped = seed_clean.strip('._-')
     if stripped and stripped != seed_clean:
         add_var(stripped, "stripped_edges")
 
-    # 7. Common Leetspeak transforms
+    if len(seed_clean) <= 16:
+        for pre in COMMON_PREFIXES[:4]:
+            add_var(f"{pre}_{stripped or seed_clean}", "prefix_addition")
+            add_var(f"{pre}.{stripped or seed_clean}", "prefix_dot_addition")
+        for suf in COMMON_SUFFIXES[:6]:
+            add_var(f"{stripped or seed_clean}{suf}", "suffix_addition")
+
+    # 8. Leetspeak variations
     leet_candidates = [seed_clean]
     for char, replacements in LEET_MAP.items():
         if char in seed_clean:
@@ -139,14 +155,6 @@ def generate_permutations(seed: str, max_variations: int = 40) -> List[Dict[str,
         if lc != seed_clean:
             add_var(lc, "leetspeak_variation")
 
-    # 8. Prefixes and Suffixes (if seed is short)
-    if len(seed_clean) <= 12:
-        for pre in COMMON_PREFIXES[:3]:
-            add_var(f"{pre}_{stripped or seed_clean}", "prefix_addition")
-        for suf in COMMON_SUFFIXES[:4]:
-            add_var(f"{stripped or seed_clean}{suf}", "suffix_addition")
-
-    # Sort by similarity descending, seed first
     sorted_vars = sorted(
         results.values(),
         key=lambda x: (not x["is_seed"], -x["similarity"], x["distance"])

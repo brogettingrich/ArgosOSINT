@@ -160,9 +160,28 @@
 .progress-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-family: var(--font-mono);
   font-size: 12px;
   margin-bottom: 8px;
+}
+
+.btn-dismiss-link {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-dismiss-link:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
 }
 
 .progress-bar-bg {
@@ -243,6 +262,18 @@
   background: rgba(255, 255, 255, 0.1);
   border-color: var(--text-primary);
   color: var(--text-primary);
+}
+
+.alias-tag {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--status-searching);
+  background: rgba(79, 172, 254, 0.08);
+  border: 1px solid rgba(79, 172, 254, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
 }
 
 .account-handle {
