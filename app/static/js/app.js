@@ -3,12 +3,14 @@ let currentEmailInfo = null;
 let currentPhoneInfo = null;
 let graphVisualizer = null;
 let currentEventSource = null;
+let activeFilter = 'all';
 
 document.addEventListener('DOMContentLoaded', () => {
   graphVisualizer = new IntelligenceGraph('graphCanvas');
   setupNavigation();
   setupPermutationPreview();
   setupFormSubmit();
+  setupFilterChips();
 });
 
 function setupNavigation() {
@@ -30,20 +32,32 @@ function setupNavigation() {
   });
 }
 
+function setupFilterChips() {
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      activeFilter = chip.dataset.filter;
+      renderFindingsGrid();
+    });
+  });
+}
+
 function setupPermutationPreview() {
   const usernameInput = document.getElementById('input-username');
   const previewBar = document.getElementById('permutation-preview-bar');
+  const chkFuzzy = document.getElementById('chk-fuzzy');
 
   let debounceTimer;
-  usernameInput.addEventListener('input', () => {
+  const updatePreview = () => {
     clearTimeout(debounceTimer);
     const val = usernameInput.value.trim();
-    if (!val) {
+    if (!val || !chkFuzzy.checked) {
       previewBar.innerHTML = '';
       return;
     }
     debounceTimer = setTimeout(async () => {
-      const data = await API.getPermutations(val, 12);
+      const data = await API.getPermutations(val, 10);
       if (data.permutations) {
         previewBar.innerHTML = data.permutations.map(p => `
           <span class="perm-chip ${p.is_seed ? 'seed' : ''}">
@@ -52,7 +66,10 @@ function setupPermutationPreview() {
         `).join('');
       }
     }, 250);
-  });
+  };
+
+  usernameInput.addEventListener('input', updatePreview);
+  chkFuzzy.addEventListener('change', updatePreview);
 }
 
 function setupFormSubmit() {
@@ -85,7 +102,6 @@ function startReconScan() {
     return;
   }
 
-  // Reset State
   currentFindings = [];
   currentEmailInfo = null;
   currentPhoneInfo = null;
@@ -96,7 +112,7 @@ function startReconScan() {
   if (currentEventSource) currentEventSource.close();
 
   const params = new URLSearchParams({
-    username, email, phone, real_name: realName, fuzzy, max_perms: 18
+    username, email, phone, real_name: realName, fuzzy, max_perms: 12
   });
 
   currentEventSource = new EventSource(`/api/scan/stream?${params.toString()}`);
@@ -106,16 +122,12 @@ function startReconScan() {
 
     if (data.type === 'email_result') {
       currentEmailInfo = data.data;
-      if (data.data.valid_syntax) {
-        addEmailCard(data.data);
-      }
+      renderFindingsGrid();
     }
 
     if (data.type === 'phone_result') {
       currentPhoneInfo = data.data;
-      if (data.data.valid) {
-        addPhoneCard(data.data);
-      }
+      renderFindingsGrid();
     }
 
     if (data.type === 'probe_result') {
@@ -128,7 +140,7 @@ function startReconScan() {
       if (res.found) {
         currentFindings.push(res);
         document.getElementById('findings-count').innerText = `${currentFindings.length} Discovered`;
-        addFindingCard(res);
+        renderFindingsGrid();
         if (graphVisualizer) {
           graphVisualizer.buildFromScan(username || email || phone, currentFindings, currentEmailInfo, currentPhoneInfo);
         }
@@ -143,8 +155,32 @@ function startReconScan() {
 
   currentEventSource.onerror = () => {
     if (currentEventSource) currentEventSource.close();
-    document.getElementById('progress-detail').innerText = 'Scan session ended.';
+    document.getElementById('progress-detail').innerText = 'Scan session complete.';
   };
+}
+
+function renderFindingsGrid() {
+  const grid = document.getElementById('results-grid');
+  grid.innerHTML = '';
+
+  if (currentEmailInfo && currentEmailInfo.valid_syntax && (activeFilter === 'all' || activeFilter === 'exact')) {
+    addEmailCard(currentEmailInfo);
+  }
+  if (currentPhoneInfo && currentPhoneInfo.valid && (activeFilter === 'all' || activeFilter === 'exact')) {
+    addPhoneCard(currentPhoneInfo);
+  }
+
+  const filtered = currentFindings.filter(item => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'exact') return item.is_seed;
+    if (activeFilter === 'permutation') return !item.is_seed;
+    return item.category === activeFilter;
+  });
+
+  // Sort exact matches first, then by match score
+  filtered.sort((a, b) => (b.is_seed ? 1 : 0) - (a.is_seed ? 1 : 0));
+
+  filtered.forEach(item => addFindingCard(item));
 }
 
 function addFindingCard(item) {
@@ -159,14 +195,16 @@ function addFindingCard(item) {
         <span>${item.site}</span>
         <span class="category-tag">${item.category}</span>
       </span>
-      <span class="corrob-badge">${corrob.score}% Match</span>
+      <span class="corrob-badge ${item.is_seed ? 'exact' : ''}">
+        ${item.is_seed ? 'Exact Match' : `${corrob.score}% Match`}
+      </span>
     </div>
     <div class="account-handle">Handle: <strong>@${item.username}</strong></div>
     <a href="${item.profile_url}" target="_blank" rel="noopener" class="btn-profile-link">
-      Open Profile ↗
+      Open Profile [↗]
     </a>
   `;
-  grid.prepend(card);
+  grid.appendChild(card);
 }
 
 function addEmailCard(emailData) {
@@ -182,10 +220,10 @@ function addEmailCard(emailData) {
     </div>
     <div class="account-handle"><code>${emailData.email}</code></div>
     <div style="font-size:11px;color:var(--text-secondary);">
-      Domain: ${emailData.domain} | Gravatar: ${emailData.gravatar.exists ? 'Found' : 'Not Set'}
+      Domain: ${emailData.domain} | Gravatar: ${emailData.gravatar.exists ? 'Found' : 'None'}
     </div>
   `;
-  grid.prepend(card);
+  grid.appendChild(card);
 }
 
 function addPhoneCard(phoneData) {
@@ -204,7 +242,7 @@ function addPhoneCard(phoneData) {
       Country: ${phoneData.country}
     </div>
   `;
-  grid.prepend(card);
+  grid.appendChild(card);
 }
 
 async function loadHistory() {

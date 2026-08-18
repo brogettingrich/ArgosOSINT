@@ -14,7 +14,7 @@
     <div class="brand-wrapper">
       <div class="brand-logo"></div>
       <div class="brand-title">ARGOS<span style="color:var(--text-secondary);font-weight:400;">OSINT</span></div>
-      <span class="brand-badge">PROBE ENGINE</span>
+      <span class="brand-badge">RECON ENGINE</span>
     </div>
     <nav class="nav-tabs">
       <button class="nav-tab-btn active" data-target="view-scanner">Scanner</button>
@@ -29,14 +29,14 @@
       <div class="search-card">
         <div class="card-header-row">
           <div class="card-title">Target Intelligence Parameters</div>
-          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">FUZZY_CORROBORATION_ACTIVE</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">ACTIVE_CORRELATION_V1</div>
         </div>
 
         <form id="scan-form">
           <div class="grid-inputs">
             <div class="input-group">
               <label class="input-label">Username / Handle</label>
-              <input type="text" id="input-username" class="form-input" placeholder="e.g. user...34, john_doe">
+              <input type="text" id="input-username" class="form-input" placeholder="e.g. elonmusk, user...34">
             </div>
             <div class="input-group">
               <label class="input-label">Email Address (Optional)</label>
@@ -56,12 +56,11 @@
 
           <div class="options-row">
             <label class="checkbox-label">
-              <input type="checkbox" id="chk-fuzzy" checked>
-              <span>Enable Heuristic Permutation Matrix (Dots, underscores, leet variations)</span>
+              <input type="checkbox" id="chk-fuzzy">
+              <span>Enable Fuzzy Permutations (Scan dot/underscore variants and typo aliases)</span>
             </label>
             <button type="submit" class="btn-launch-scan">
               <span>Launch Recon Probe</span>
-              <span>⚡</span>
             </button>
           </div>
         </form>
@@ -79,12 +78,22 @@
       </div>
 
       <!-- Results Header & Actions -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;">
         <h3 id="findings-count" style="font-size:15px;font-weight:600;">Discovered Accounts</h3>
         <div style="display:flex;gap:8px;">
           <button id="btn-export-json" class="btn-profile-link" style="padding:4px 10px;font-size:11px;">Export JSON</button>
           <button id="btn-export-html" class="btn-profile-link" style="padding:4px 10px;font-size:11px;">Export HTML</button>
         </div>
+      </div>
+
+      <!-- Category Filter Tabs -->
+      <div class="filter-row" id="filter-row" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="filter-chip active" data-filter="all">All</button>
+        <button class="filter-chip" data-filter="exact">Exact Matches</button>
+        <button class="filter-chip" data-filter="permutation">Permutations</button>
+        <button class="filter-chip" data-filter="Developer">Developer</button>
+        <button class="filter-chip" data-filter="Social">Social</button>
+        <button class="filter-chip" data-filter="Gaming">Gaming</button>
       </div>
 
       <div class="results-grid" id="results-grid"></div>

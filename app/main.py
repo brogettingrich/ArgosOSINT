@@ -21,7 +21,7 @@ logger = logging.getLogger("ArgosOSINT")
 
 init_db()
 
-app = FastAPI(title="ArgosOSINT", version="1.0.0", description="Multi-Target Intelligence & Fuzzy Permutation OSINT Platform")
+app = FastAPI(title="ArgosOSINT", version="1.0.0", description="Multi-Target Intelligence & Reconnaissance Platform")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
 
 class ScanRequest(BaseModel):
@@ -29,8 +29,8 @@ class ScanRequest(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     real_name: Optional[str] = None
-    enable_fuzzy: bool = True
-    max_permutations: int = 25
+    enable_fuzzy: bool = False
+    max_permutations: int = 15
     target_name: Optional[str] = None
 
 @app.get("/", response_class=HTMLResponse)
@@ -67,13 +67,9 @@ async def sse_scan_stream(
     email: Optional[str] = None,
     phone: Optional[str] = None,
     real_name: Optional[str] = None,
-    fuzzy: bool = True,
-    max_perms: int = 15
+    fuzzy: bool = False,
+    max_perms: int = 12
 ):
-    """
-    Real-time Server-Sent Events (SSE) scan stream.
-    Streams username probes, email checks, and phone intelligence in real time.
-    """
     target_label = username or email or phone or "Target"
     dossier_id = repo.create_dossier(
         target_name=target_label,
@@ -83,35 +79,37 @@ async def sse_scan_stream(
     )
 
     async def event_generator():
-        # 1. Initial Handshake
         yield f"data: {json.dumps({'type': 'init', 'dossier_id': dossier_id, 'target': target_label})}\\n\\n"
 
-        # 2. Process Email Intelligence if provided
         if email:
             email_info = await probe_email_intelligence(email)
             yield f"data: {json.dumps({'type': 'email_result', 'data': email_info})}\\n\\n"
 
-        # 3. Process Phone Intelligence if provided
         if phone:
             phone_info = analyze_phone_number(phone)
             yield f"data: {json.dumps({'type': 'phone_result', 'data': phone_info})}\\n\\n"
 
-        # 4. Process Username & Fuzzy Variations
         if username:
+            clean_seed = username.strip().lower()
+            usernames_to_probe = [clean_seed]
+
             if fuzzy:
                 perms_list = generate_permutations(username, max_variations=max_perms)
-                usernames_to_probe = [p["username"] for p in perms_list]
-            else:
-                usernames_to_probe = [username.strip().lower()]
+                for p in perms_list:
+                    if p["username"] not in usernames_to_probe:
+                        usernames_to_probe.append(p["username"])
 
             yield f"data: {json.dumps({'type': 'permutation_list', 'variations': usernames_to_probe})}\\n\\n"
 
-            seed_meta = {"username": username, "display_name": real_name or username}
+            seed_meta = {"username": clean_seed, "display_name": real_name or clean_seed}
             total_checks = len(usernames_to_probe) * len(SITES_DB)
             completed = 0
 
             async for result in scan_usernames_async(usernames_to_probe):
                 completed += 1
+                is_seed_match = (result["username"] == clean_seed)
+                result["is_seed"] = is_seed_match
+
                 if result.get("found"):
                     cand_meta = {"username": result["username"], "display_name": result["username"]}
                     corrob = score_profile_corroboration(seed_meta, cand_meta)
@@ -128,9 +126,8 @@ async def sse_scan_stream(
                     }
                 }
                 yield f"data: {json.dumps(payload)}\\n\\n"
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.005)
 
-        # 5. Completion Event
         yield f"data: {json.dumps({'type': 'complete', 'dossier_id': dossier_id})}\\n\\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
