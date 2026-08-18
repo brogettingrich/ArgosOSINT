@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <title>ArgosOSINT | Multi-Target Reconnaissance</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/static/css/main.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-wrapper">
+      <div class="brand-logo"></div>
+      <div class="brand-title">ARGOS<span style="color:var(--text-secondary);font-weight:400;">OSINT</span></div>
+      <span class="brand-badge">PROBE ENGINE</span>
+    </div>
+    <nav class="nav-tabs">
+      <button class="nav-tab-btn active" data-target="view-scanner">Scanner</button>
+      <button class="nav-tab-btn" data-target="view-graph">Relationship Graph</button>
+      <button class="nav-tab-btn" data-target="view-history">Dossiers</button>
+    </nav>
+  </header>
+
+  <main class="main-container">
+    <!-- VIEW: SCANNER -->
+    <section id="view-scanner" class="view-section">
+      <div class="search-card">
+        <div class="card-header-row">
+          <div class="card-title">Target Intelligence Parameters</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">FUZZY_CORROBORATION_ACTIVE</div>
+        </div>
+
+        <form id="scan-form">
+          <div class="grid-inputs">
+            <div class="input-group">
+              <label class="input-label">Username / Handle</label>
+              <input type="text" id="input-username" class="form-input" placeholder="e.g. user...34, john_doe">
+            </div>
+            <div class="input-group">
+              <label class="input-label">Email Address (Optional)</label>
+              <input type="email" id="input-email" class="form-input" placeholder="target@domain.com">
+            </div>
+            <div class="input-group">
+              <label class="input-label">Phone Number (Optional)</label>
+              <input type="text" id="input-phone" class="form-input" placeholder="+1 555-0199">
+            </div>
+            <div class="input-group">
+              <label class="input-label">Real / Display Name</label>
+              <input type="text" id="input-name" class="form-input" placeholder="Context matching clue">
+            </div>
+          </div>
+
+          <div class="permutation-bar" id="permutation-preview-bar"></div>
+
+          <div class="options-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-fuzzy" checked>
+              <span>Enable Heuristic Permutation Matrix (Dots, underscores, leet variations)</span>
+            </label>
+            <button type="submit" class="btn-launch-scan">
+              <span>Launch Recon Probe</span>
+              <span>⚡</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Live Telemetry & Progress -->
+      <div class="progress-panel" id="progress-panel">
+        <div class="progress-header">
+          <span id="progress-detail">Initializing asynchronous worker pool...</span>
+          <span id="progress-percent">0%</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progress-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- Results Header & Actions -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+        <h3 id="findings-count" style="font-size:15px;font-weight:600;">Discovered Accounts</h3>
+        <div style="display:flex;gap:8px;">
+          <button id="btn-export-json" class="btn-profile-link" style="padding:4px 10px;font-size:11px;">Export JSON</button>
+          <button id="btn-export-html" class="btn-profile-link" style="padding:4px 10px;font-size:11px;">Export HTML</button>
+        </div>
+      </div>
+
+      <div class="results-grid" id="results-grid"></div>
+    </section>
+
+    <!-- VIEW: RELATIONSHIP GRAPH -->
+    <section id="view-graph" class="view-section" style="display: none;">
+      <div class="card-header-row">
+        <div class="card-title">Interactive Target Relationship Graph</div>
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">FORCE_DIRECTED_PHYSICS</div>
+      </div>
+      <div class="graph-container">
+        <canvas id="graphCanvas"></canvas>
+      </div>
+    </section>
+
+    <!-- VIEW: HISTORY -->
+    <section id="view-history" class="view-section" style="display: none;">
+      <div class="card-header-row">
+        <div class="card-title">Recorded Target Dossiers</div>
+      </div>
+      <table class="history-table">
+        <thead>
+          <tr><th>Target</th><th>Seed Parameter</th><th>Findings</th><th>Timestamp</th></tr>
+        </thead>
+        <tbody id="history-tbody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/graph.js"></script>
+  <script src="/static/js/export.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
