@@ -5,6 +5,26 @@ let graphVisualizer = null;
 let currentEventSource = null;
 let activeCategoryFilter = 'all';
 let activePlatformFilter = 'all';
+let isAIOnline = false;
+
+const GROQ_MODELS = [
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-Fast & Free - Recommended)' },
+  { id: 'llama-3.1-70b-versatile', name: 'Llama 3.1 70B Versatile (Deep Reasoning)' },
+  { id: 'llama3-70b-8192', name: 'Llama 3 70B (8192 Context)' },
+  { id: 'llama3-8b-8192', name: 'Llama 3 8B (8192 Context)' },
+  { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT' },
+  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (32k Context)' },
+  { id: 'custom', name: 'Custom Model ID (Write-In)...' }
+];
+
+const OLLAMA_MODELS = [
+  { id: 'llama3.2', name: 'Llama 3.2 (Default)' },
+  { id: 'llama3.1', name: 'Llama 3.1' },
+  { id: 'mistral', name: 'Mistral 7B' },
+  { id: 'phi3', name: 'Phi-3 Mini' },
+  { id: 'qwen2.5', name: 'Qwen 2.5' },
+  { id: 'custom', name: 'Custom Model ID (Write-In)...' }
+];
 
 document.addEventListener('DOMContentLoaded', () => {
   graphVisualizer = new IntelligenceGraph('graphCanvas');
@@ -121,21 +141,40 @@ function setupDismissControls() {
 async function checkAIHealth() {
   const statusPill = document.getElementById('ai-global-status');
   const statusText = document.getElementById('ai-status-text');
+  const collisionBadge = document.getElementById('collision-mode-badge');
+  const offlineDigitContainer = document.getElementById('offline-digit-container');
   if (!statusPill || !statusText) return;
 
   try {
     const res = await fetch('/api/settings/health').then(r => r.json());
     statusText.innerText = res.label;
     statusPill.className = 'ai-status-pill ' + (res.online ? 'online' : 'offline');
+    isAIOnline = res.online;
+
+    if (res.online) {
+      if (collisionBadge) {
+        collisionBadge.innerText = 'AI COLLISION DETECTION: ACTIVE';
+        collisionBadge.style.color = 'var(--status-found)';
+      }
+      if (offlineDigitContainer) offlineDigitContainer.style.display = 'none';
+    } else {
+      if (collisionBadge) {
+        collisionBadge.innerText = 'AI COLLISION DETECTION: OFFLINE (FALLBACK ACTIVE)';
+        collisionBadge.style.color = 'var(--text-muted)';
+      }
+      if (offlineDigitContainer) offlineDigitContainer.style.display = 'block';
+    }
   } catch (e) {
     statusText.innerText = 'AI: OFFLINE (SERVER UNREACHABLE)';
     statusPill.className = 'ai-status-pill offline';
+    isAIOnline = false;
+    if (offlineDigitContainer) offlineDigitContainer.style.display = 'block';
   }
 }
 
 function initLiveHealthCheck() {
   checkAIHealth();
-  setInterval(checkAIHealth, 45000); // Check every 45 seconds
+  setInterval(checkAIHealth, 45000);
 
   const statusPill = document.getElementById('ai-global-status');
   if (statusPill) {
@@ -153,7 +192,8 @@ async function setupSettingsModal() {
   const form = document.getElementById('settings-form');
   const providerSelect = document.getElementById('setting-provider');
   const keyInput = document.getElementById('setting-api-key');
-  const modelInput = document.getElementById('setting-model');
+  const modelSelect = document.getElementById('setting-model-select');
+  const modelCustomInput = document.getElementById('setting-model-custom');
   const hostInput = document.getElementById('setting-host');
   const enableAiChk = document.getElementById('setting-enable-ai');
   const groupKey = document.getElementById('group-api-key');
@@ -170,25 +210,49 @@ async function setupSettingsModal() {
   const serverSettings = await fetch('/api/settings').then(r => r.json());
   const currentSettings = { ...serverSettings, ...savedLocal };
 
+  const populateModels = (provider, selectedModel) => {
+    const list = (provider === 'groq') ? GROQ_MODELS : OLLAMA_MODELS;
+    modelSelect.innerHTML = list.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+
+    const matched = list.find(m => m.id === selectedModel);
+    if (matched) {
+      modelSelect.value = selectedModel;
+      modelCustomInput.style.display = 'none';
+    } else if (selectedModel) {
+      modelSelect.value = 'custom';
+      modelCustomInput.value = selectedModel;
+      modelCustomInput.style.display = 'block';
+    } else {
+      modelSelect.value = list[0].id;
+      modelCustomInput.style.display = 'none';
+    }
+  };
+
   if (currentSettings.ai_provider) providerSelect.value = currentSettings.ai_provider;
   if (currentSettings.ai_api_key) keyInput.value = currentSettings.ai_api_key;
-  if (currentSettings.ai_model) modelInput.value = currentSettings.ai_model;
   if (currentSettings.ai_host) hostInput.value = currentSettings.ai_host;
   enableAiChk.checked = currentSettings.enable_ai !== false;
+
+  populateModels(providerSelect.value, currentSettings.ai_model || 'llama-3.1-8b-instant');
+
+  modelSelect.addEventListener('change', () => {
+    if (modelSelect.value === 'custom') {
+      modelCustomInput.style.display = 'block';
+      modelCustomInput.focus();
+    } else {
+      modelCustomInput.style.display = 'none';
+    }
+  });
 
   const updateVisibility = () => {
     if (providerSelect.value === 'groq') {
       groupKey.style.display = 'flex';
       groupHost.style.display = 'none';
-      if (!modelInput.value || modelInput.value.includes('llama3.2')) {
-        modelInput.value = 'llama-3.3-70b-versatile';
-      }
+      populateModels('groq', modelSelect.value === 'custom' ? modelCustomInput.value : modelSelect.value);
     } else {
       groupKey.style.display = 'none';
       groupHost.style.display = 'flex';
-      if (!modelInput.value || modelInput.value.includes('llama-3.3')) {
-        modelInput.value = 'llama3.2';
-      }
+      populateModels('ollama', modelSelect.value === 'custom' ? modelCustomInput.value : modelSelect.value);
     }
   };
 
@@ -213,6 +277,10 @@ async function setupSettingsModal() {
     }
   });
 
+  const getEffectiveModel = () => {
+    return modelSelect.value === 'custom' ? (modelCustomInput.value.trim() || 'llama-3.1-8b-instant') : modelSelect.value;
+  };
+
   testBtn.addEventListener('click', async () => {
     testStatus.style.display = 'block';
     testStatus.style.color = 'var(--text-secondary)';
@@ -221,7 +289,7 @@ async function setupSettingsModal() {
     const payload = {
       ai_provider: providerSelect.value,
       ai_api_key: keyInput.value.trim(),
-      ai_model: modelInput.value.trim(),
+      ai_model: getEffectiveModel(),
       ai_host: hostInput.value.trim(),
       enable_ai: enableAiChk.checked
     };
@@ -243,10 +311,11 @@ async function setupSettingsModal() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const effectiveModel = getEffectiveModel();
     const payload = {
       ai_provider: providerSelect.value,
       ai_api_key: keyInput.value.trim(),
-      ai_model: modelInput.value.trim(),
+      ai_model: effectiveModel,
       ai_host: hostInput.value.trim(),
       enable_ai: enableAiChk.checked
     };
@@ -270,6 +339,7 @@ function setupPermutationPreview() {
   const usernameInput = document.getElementById('input-username');
   const previewBar = document.getElementById('permutation-preview-bar');
   const chkFuzzy = document.getElementById('chk-fuzzy');
+  const chkDigits = document.getElementById('chk-digits');
 
   let debounceTimer;
   const updatePreview = () => {
@@ -280,7 +350,16 @@ function setupPermutationPreview() {
       return;
     }
     debounceTimer = setTimeout(async () => {
-      const data = await API.getPermutations(val, 15);
+      const resp = await fetch('/api/permutations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: val,
+          max_permutations: 25,
+          include_digits: chkDigits ? chkDigits.checked : false
+        })
+      });
+      const data = await resp.json();
       if (data.permutations) {
         previewBar.innerHTML = data.permutations.map(p => `
           <span class="perm-chip ${p.is_seed ? 'seed' : ''}">
@@ -293,6 +372,7 @@ function setupPermutationPreview() {
 
   usernameInput.addEventListener('input', updatePreview);
   chkFuzzy.addEventListener('change', updatePreview);
+  if (chkDigits) chkDigits.addEventListener('change', updatePreview);
 }
 
 function setupFormSubmit() {
@@ -320,6 +400,7 @@ function startReconScan() {
   const realName = document.getElementById('input-name').value.trim();
   const location = document.getElementById('input-location').value.trim();
   const fuzzy = document.getElementById('chk-fuzzy').checked;
+  const digits = document.getElementById('chk-digits') ? document.getElementById('chk-digits').checked : false;
 
   if (!username && !email && !phone) {
     alert('Please provide at least a username, email, or phone number.');
@@ -338,7 +419,7 @@ function startReconScan() {
   if (currentEventSource) currentEventSource.close();
 
   const params = new URLSearchParams({
-    username, email, phone, real_name: realName, location, fuzzy, max_perms: 15
+    username, email, phone, real_name: realName, location, fuzzy, digits, max_perms: 25
   });
 
   currentEventSource = new EventSource(`/api/scan/stream?${params.toString()}`);
@@ -509,7 +590,7 @@ function addPhoneCard(phoneData) {
 }
 
 async function loadHistory() {
-  const list = await API.getDossiers();
+  const list = await fetch('/api/dossiers').then(r => r.json());
   const tbody = document.getElementById('history-tbody');
   if (!tbody) return;
 

@@ -12,7 +12,7 @@ from app.database.schema import init_db
 from app.database import repository as repo
 from app.core.permutations import generate_permutations
 from app.core.corroboration import score_profile_corroboration
-from app.core.ai_engine import AIEngine
+from app.core.ai_engine import AIEngine, DEFAULT_GROQ_MODEL
 from app.modules.username_probe import scan_usernames_async, SITES_DB
 from app.modules.email_probe import probe_email_intelligence
 from app.modules.phone_probe import analyze_phone_number
@@ -32,12 +32,13 @@ class ScanRequest(BaseModel):
     real_name: Optional[str] = None
     location: Optional[str] = None
     enable_fuzzy: bool = False
-    max_permutations: int = 15
+    include_digits: bool = False
+    max_permutations: int = 25
 
 class SettingsPayload(BaseModel):
     ai_provider: str = "groq"
     ai_api_key: str = ""
-    ai_model: str = "llama-3.3-70b-versatile"
+    ai_model: str = "llama-3.1-8b-instant"
     ai_host: str = "http://127.0.0.1:11434"
     enable_ai: bool = True
 
@@ -60,7 +61,7 @@ async def get_settings():
         "ai_provider": settings.get("ai_provider", "groq"),
         "ai_api_key": raw_key,
         "ai_api_key_masked": masked_key,
-        "ai_model": settings.get("ai_model", "llama-3.3-70b-versatile"),
+        "ai_model": settings.get("ai_model", DEFAULT_GROQ_MODEL),
         "ai_host": settings.get("ai_host", "http://127.0.0.1:11434"),
         "enable_ai": settings.get("enable_ai", "true").lower() == "true"
     }
@@ -70,7 +71,7 @@ async def save_settings(payload: SettingsPayload):
     repo.set_setting("ai_provider", payload.ai_provider)
     if payload.ai_api_key:
         repo.set_setting("ai_api_key", payload.ai_api_key.strip())
-    repo.set_setting("ai_model", payload.ai_model.strip())
+    repo.set_setting("ai_model", payload.ai_model.strip() or DEFAULT_GROQ_MODEL)
     repo.set_setting("ai_host", payload.ai_host.strip())
     repo.set_setting("enable_ai", "true" if payload.enable_ai else "false")
     return {"success": True, "message": "Settings saved successfully"}
@@ -80,7 +81,7 @@ async def check_ai_health():
     settings = repo.get_all_settings()
     provider = settings.get("ai_provider", "groq")
     api_key = settings.get("ai_api_key", "")
-    model = settings.get("ai_model", "llama-3.3-70b-versatile")
+    model = settings.get("ai_model", DEFAULT_GROQ_MODEL)
     host = settings.get("ai_host", "http://127.0.0.1:11434")
     enable_ai = settings.get("enable_ai", "true").lower() == "true"
 
@@ -102,7 +103,7 @@ async def check_ai_health():
     return {
         "online": False,
         "status": "unreachable",
-        "label": f"AI: OFFLINE ({provider.upper()} UNREACHABLE)",
+        "label": f"AI: OFFLINE ({provider.upper()})",
         "provider": provider,
         "error": res.get("error")
     }
@@ -122,7 +123,7 @@ async def test_ai_settings(payload: SettingsPayload):
 async def preview_permutations(req: ScanRequest):
     if not req.username:
         return {"permutations": []}
-    perms = generate_permutations(req.username, max_variations=req.max_permutations)
+    perms = generate_permutations(req.username, max_variations=req.max_permutations, include_digits=req.include_digits)
     return {"permutations": perms, "count": len(perms)}
 
 @app.get("/api/dossiers")
@@ -144,7 +145,8 @@ async def sse_scan_stream(
     real_name: Optional[str] = None,
     location: Optional[str] = None,
     fuzzy: bool = False,
-    max_perms: int = 15
+    digits: bool = False,
+    max_perms: int = 25
 ):
     target_label = username or email or phone or "Target"
     dossier_id = repo.create_dossier(
@@ -176,10 +178,10 @@ async def sse_scan_stream(
             clean_seed = username.strip().lower()
             usernames_to_probe = [clean_seed]
 
-            # 1. AI-Driven Context Permutations (if AI is enabled and connected)
+            # 1. AI-Driven Context & Collision Permutations (if AI is active)
             ai_perms = []
             if ai_enabled:
-                yield f"data: {json.dumps({'type': 'status_update', 'message': 'AI reasoning engine analyzing context & naming structure...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'status_update', 'message': 'AI reasoning engine analyzing context, syllables & collision patterns...'})}\n\n"
                 ai_perms = await AIEngine.synthesize_permutations(
                     settings=settings,
                     seed_username=clean_seed,
@@ -190,9 +192,9 @@ async def sse_scan_stream(
                     if ap not in usernames_to_probe:
                         usernames_to_probe.append(ap)
 
-            # 2. Local Heuristic Permutations (Always available / fallback)
+            # 2. Local Heuristic Permutations (with optional digit collision matrix when offline)
             if fuzzy or not ai_perms:
-                perms_list = generate_permutations(username, max_variations=max_perms)
+                perms_list = generate_permutations(username, max_variations=max_perms, include_digits=(digits and not ai_enabled))
                 for p in perms_list:
                     if p["username"] not in usernames_to_probe:
                         usernames_to_probe.append(p["username"])

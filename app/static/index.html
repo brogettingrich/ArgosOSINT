@@ -37,7 +37,7 @@
       <div class="search-card">
         <div class="card-header-row">
           <div class="card-title">Target Intelligence Parameters</div>
-          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">CONTEXT_AWARE_V2</div>
+          <div id="collision-mode-badge" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">AI COLLISION DETECTION: STANDBY</div>
         </div>
 
         <form id="scan-form">
@@ -66,11 +66,23 @@
 
           <div class="permutation-bar" id="permutation-preview-bar"></div>
 
+          <!-- Permutations & Dynamic Collision Toggles -->
           <div class="options-row">
-            <label class="checkbox-label">
-              <input type="checkbox" id="chk-fuzzy" checked>
-              <span>Enable AI & Heuristic Permutations (Syllable decomposition, country suffix, letter doubling)</span>
-            </label>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <label class="checkbox-label">
+                <input type="checkbox" id="chk-fuzzy" checked>
+                <span>Enable Permutation Generation (Syllable decomposition, country suffix, letter doubling)</span>
+              </label>
+
+              <!-- Offline-only Systematic Digit Collision Toggle (shows when AI is offline) -->
+              <div id="offline-digit-container" style="display:none;margin-left:22px;">
+                <label class="checkbox-label" style="color:var(--status-warn);">
+                  <input type="checkbox" id="chk-digits">
+                  <span>Enable Offline Systematic Digit Collisions (e.g. handle1, handle2, handle3, handle99)</span>
+                </label>
+              </div>
+            </div>
+
             <button type="submit" class="btn-launch-scan">
               <span>Launch Recon Probe</span>
             </button>
@@ -96,7 +108,7 @@
       <div id="ai-briefing-card" class="briefing-card" style="display:none;">
         <div class="briefing-header">
           <span>AI EXECUTIVE INTELLIGENCE BRIEFING</span>
-          <span id="briefing-model-tag" class="category-tag">GROQ LLAMA-3.3</span>
+          <span id="briefing-model-tag" class="category-tag">GROQ LPU</span>
         </div>
         <p id="briefing-text" class="briefing-body"></p>
       </div>
@@ -178,9 +190,11 @@
           </div>
         </div>
 
+        <!-- Dynamic Model Selector Dropdown -->
         <div class="input-group" style="margin-bottom: 14px;">
           <label class="input-label">Model Identifier</label>
-          <input type="text" id="setting-model" class="form-input" value="llama-3.3-70b-versatile">
+          <select id="setting-model-select" class="form-input"></select>
+          <input type="text" id="setting-model-custom" class="form-input" style="margin-top:6px;display:none;" placeholder="Enter custom model ID">
         </div>
 
         <div id="group-ollama-host" class="input-group" style="margin-bottom: 14px; display: none;">

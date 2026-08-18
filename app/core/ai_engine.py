@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger("ArgosAI")
 
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.2"
 
@@ -16,26 +16,34 @@ class AIEngine:
     async def test_connection(provider: str, api_key: str = "", model: str = "", host: str = "") -> Dict[str, Any]:
         try:
             if provider == "groq":
-                if not api_key:
+                clean_key = api_key.strip()
+                if not clean_key:
                     return {"success": False, "status": "no_key", "error": "No Groq API key configured"}
-                headers = {"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"}
+                headers = {"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"}
+                clean_model = model.strip() or DEFAULT_GROQ_MODEL
                 payload = {
-                    "model": model.strip() or DEFAULT_GROQ_MODEL,
-                    "messages": [{"role": "user", "content": "Respond with 'OK'."}],
+                    "model": clean_model,
+                    "messages": [{"role": "user", "content": "Respond with OK"}],
                     "max_tokens": 5
                 }
-                async with httpx.AsyncClient(timeout=6.0) as client:
+                async with httpx.AsyncClient(timeout=8.0) as client:
                     resp = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
                     if resp.status_code == 200:
-                        return {"success": True, "status": "online", "message": "Groq LPU Engine Online"}
-                    return {"success": False, "status": "error", "error": f"Groq Error ({resp.status_code})"}
+                        return {"success": True, "status": "online", "message": f"Groq Engine Online ({clean_model})"}
+                    try:
+                        err_data = resp.json()
+                        err_msg = err_data.get("error", {}).get("message", resp.text)
+                    except:
+                        err_msg = resp.text
+                    return {"success": False, "status": "error", "error": f"Groq ({resp.status_code}): {err_msg}"}
 
             elif provider == "ollama":
                 ollama_url = (host.strip() or DEFAULT_OLLAMA_HOST).rstrip("/") + "/api/tags"
-                async with httpx.AsyncClient(timeout=4.0) as client:
+                async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.get(ollama_url)
                     if resp.status_code == 200:
-                        return {"success": True, "status": "online", "message": "Local Ollama Engine Online"}
+                        clean_model = model.strip() or DEFAULT_OLLAMA_MODEL
+                        return {"success": True, "status": "online", "message": f"Local Ollama Online ({clean_model})"}
                     return {"success": False, "status": "error", "error": f"Ollama Error ({resp.status_code})"}
 
             return {"success": False, "status": "error", "error": f"Unknown provider: {provider}"}
@@ -46,11 +54,13 @@ class AIEngine:
     async def query_llm(provider: str, api_key: str, model: str, host: str, system_prompt: str, user_prompt: str, temperature: float = 0.2) -> Optional[str]:
         try:
             if provider == "groq":
-                if not api_key:
+                clean_key = api_key.strip()
+                if not clean_key:
                     return None
-                headers = {"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"}
+                headers = {"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"}
+                clean_model = model.strip() or DEFAULT_GROQ_MODEL
                 payload = {
-                    "model": model.strip() or DEFAULT_GROQ_MODEL,
+                    "model": clean_model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -63,11 +73,14 @@ class AIEngine:
                     if resp.status_code == 200:
                         data = resp.json()
                         return data["choices"][0]["message"]["content"].strip()
+                    else:
+                        logger.warning(f"Groq query failed: {resp.status_code} - {resp.text}")
 
             elif provider == "ollama":
                 ollama_url = (host.strip() or DEFAULT_OLLAMA_HOST).rstrip("/") + "/api/chat"
+                clean_model = model.strip() or DEFAULT_OLLAMA_MODEL
                 payload = {
-                    "model": model.strip() or DEFAULT_OLLAMA_MODEL,
+                    "model": clean_model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -93,11 +106,13 @@ class AIEngine:
         host = settings.get("ai_host", "")
 
         system_prompt = (
-            "You are an expert OSINT pseudonym and handle intelligence generator. "
+            "You are an expert OSINT pseudonym, syllable analysis, and collision intelligence generator. "
             "Analyze the target username, real name(s), location, and context clues. "
-            "Identify first and last names, syllable boundaries, and common cultural naming conventions. "
-            "Output ONLY a raw JSON array of 10 to 18 high-probability username permutations (lowercase, alphanumeric with dots/underscores/hyphens). "
-            "Do not include explanations or markdown fences. Output ONLY the JSON array."
+            "Identify first and last names, syllable boundaries, cultural country suffixes (e.g. _il, _uk, _us), "
+            "and human username collision fallbacks (e.g. appending single digits like 1, 2, 3, 7, 01 or separator swaps like . vs _ vs -). "
+            "For multi-word handles like 'account_loading', include variants like 'account.loading', 'account.loading3', 'account_loading1', 'account_loading_3', 'accountloading'. "
+            "Output ONLY a raw JSON array of 12 to 20 high-probability username permutations (lowercase, alphanumeric with dots/underscores/hyphens). "
+            "Do not include markdown fences or explanation. Output ONLY the JSON array."
         )
 
         user_prompt = (
@@ -105,7 +120,7 @@ class AIEngine:
             f"Known Names / Aliases: {real_names}\n"
             f"Location / Country: {location}\n"
             f"Context / Keywords: {keywords}\n\n"
-            "Generate intelligent handle variations. Example output format: [\"handle_one\", \"handle.two\", \"handletwo_il\"]"
+            "Generate intelligent handle variations. Example output format: [\"handle_one\", \"handle.two\", \"handle.two3\", \"handletwo_il\"]"
         )
 
         raw_resp = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.3)
