@@ -9,6 +9,35 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def get_setting(key: str, default: str = "") -> str:
+    conn = get_connection()
+    try:
+        cur = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+        row = cur.fetchone()
+        return row["value"] if row else default
+    finally:
+        conn.close()
+
+def set_setting(key: str, value: str):
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (key, value)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_all_settings() -> Dict[str, str]:
+    conn = get_connection()
+    try:
+        cur = conn.execute("SELECT key, value FROM app_settings")
+        return {r["key"]: r["value"] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
 def create_dossier(target_name: str, seed_username: str = "", seed_email: str = "", seed_phone: str = "", notes: str = "") -> str:
     dossier_id = str(uuid.uuid4())[:8]
     conn = get_connection()

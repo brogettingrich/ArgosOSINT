@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS scan_results (
     FOREIGN KEY(dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_scan_dossier ON scan_results(dossier_id);
 CREATE INDEX IF NOT EXISTS idx_scan_found ON scan_results(found);
 """

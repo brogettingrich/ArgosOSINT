@@ -14,13 +14,21 @@
     <div class="brand-wrapper">
       <div class="brand-logo"></div>
       <div class="brand-title">ARGOS<span style="color:var(--text-secondary);font-weight:400;">OSINT</span></div>
-      <span class="brand-badge">PRECISION PROBE ENGINE</span>
+      <span class="brand-badge">PROBE ENGINE</span>
     </div>
-    <nav class="nav-tabs">
-      <button class="nav-tab-btn active" data-target="view-scanner">Scanner</button>
-      <button class="nav-tab-btn" data-target="view-graph">Relationship Graph</button>
-      <button class="nav-tab-btn" data-target="view-history">Dossiers</button>
-    </nav>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <!-- Real-Time AI Status Badge -->
+      <div id="ai-global-status" class="ai-status-pill offline" title="Click to configure AI Engine">
+        <span class="status-dot"></span>
+        <span id="ai-status-text">AI: CHECKING...</span>
+      </div>
+      <nav class="nav-tabs">
+        <button class="nav-tab-btn active" data-target="view-scanner">Scanner</button>
+        <button class="nav-tab-btn" data-target="view-graph">Relationship Graph</button>
+        <button class="nav-tab-btn" data-target="view-history">Dossiers</button>
+      </nav>
+      <button id="btn-open-settings" class="btn-settings-gear" title="Configure AI & API Keys">Settings</button>
+    </div>
   </header>
 
   <main class="main-container">
@@ -29,26 +37,26 @@
       <div class="search-card">
         <div class="card-header-row">
           <div class="card-title">Target Intelligence Parameters</div>
-          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">MULTI_ALIAS_ACTIVE</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">CONTEXT_AWARE_V2</div>
         </div>
 
         <form id="scan-form">
           <div class="grid-inputs">
             <div class="input-group">
               <label class="input-label">Username / Handle</label>
-              <input type="text" id="input-username" class="form-input" placeholder="e.g. account_loading, elonmusk">
+              <input type="text" id="input-username" class="form-input" placeholder="e.g. ozalmagor, elonmusk">
             </div>
             <div class="input-group">
               <label class="input-label">Known Names / Aliases (Comma-Separated)</label>
-              <input type="text" id="input-name" class="form-input" placeholder="e.g. Name1, Name2, Alias3">
+              <input type="text" id="input-name" class="form-input" placeholder="e.g. Oz Almagor, Oz">
+            </div>
+            <div class="input-group">
+              <label class="input-label">Location / Country (Optional)</label>
+              <input type="text" id="input-location" class="form-input" placeholder="e.g. Israel, USA, UK">
             </div>
             <div class="input-group">
               <label class="input-label">Email Address (Optional)</label>
               <input type="email" id="input-email" class="form-input" placeholder="target@domain.com">
-            </div>
-            <div class="input-group">
-              <label class="input-label">Phone Number (Optional)</label>
-              <input type="text" id="input-phone" class="form-input" placeholder="+1 555-0199">
             </div>
           </div>
 
@@ -56,8 +64,8 @@
 
           <div class="options-row">
             <label class="checkbox-label">
-              <input type="checkbox" id="chk-fuzzy">
-              <span>Enable Full Permutations (Trailing letter doubling like loadingg, separator swaps, and typo matrix)</span>
+              <input type="checkbox" id="chk-fuzzy" checked>
+              <span>Enable AI & Heuristic Permutations (Syllable decomposition, country suffix, letter doubling)</span>
             </label>
             <button type="submit" class="btn-launch-scan">
               <span>Launch Recon Probe</span>
@@ -78,6 +86,15 @@
         <div class="progress-bar-bg">
           <div class="progress-bar-fill" id="progress-bar-fill"></div>
         </div>
+      </div>
+
+      <!-- AI Executive Intelligence Briefing Card -->
+      <div id="ai-briefing-card" class="briefing-card" style="display:none;">
+        <div class="briefing-header">
+          <span>AI EXECUTIVE INTELLIGENCE BRIEFING</span>
+          <span id="briefing-model-tag" class="category-tag">GROQ LLAMA-3.3</span>
+        </div>
+        <p id="briefing-text" class="briefing-body"></p>
       </div>
 
       <!-- Results Header & Actions -->
@@ -101,7 +118,7 @@
         <button class="filter-chip" data-filter="Media">Media</button>
       </div>
 
-      <!-- Dynamic Sub-Platform Filter Bar (e.g. inside Social: Instagram, TikTok, YouTube, etc.) -->
+      <!-- Dynamic Sub-Platform Filter Bar -->
       <div class="sub-filter-row" id="sub-filter-row" style="display:none;"></div>
 
       <div class="results-grid" id="results-grid"></div>
@@ -131,6 +148,58 @@
       </table>
     </section>
   </main>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settings-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="card-header-row" style="margin-bottom: 20px;">
+        <div class="card-title">AI & Reconnaissance Settings</div>
+        <button id="btn-close-settings" class="btn-dismiss-link">Close</button>
+      </div>
+
+      <form id="settings-form">
+        <div class="input-group" style="margin-bottom: 14px;">
+          <label class="input-label">AI Reasoning Provider</label>
+          <select id="setting-provider" class="form-input">
+            <option value="groq">Groq Cloud API (Recommended - 500+ tokens/sec)</option>
+            <option value="ollama">Ollama (100% Offline Local Model)</option>
+          </select>
+        </div>
+
+        <div id="group-api-key" class="input-group" style="margin-bottom: 14px;">
+          <label class="input-label">Groq API Key (Persisted Securely)</label>
+          <div style="position:relative;">
+            <input type="password" id="setting-api-key" class="form-input" style="width:100%;padding-right:60px;" placeholder="gsk_...">
+            <button type="button" id="btn-toggle-key" class="btn-dismiss-link" style="position:absolute;right:8px;top:8px;">Show</button>
+          </div>
+        </div>
+
+        <div class="input-group" style="margin-bottom: 14px;">
+          <label class="input-label">Model Identifier</label>
+          <input type="text" id="setting-model" class="form-input" value="llama-3.3-70b-versatile">
+        </div>
+
+        <div id="group-ollama-host" class="input-group" style="margin-bottom: 14px; display: none;">
+          <label class="input-label">Ollama Host URL</label>
+          <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434">
+        </div>
+
+        <div class="input-group" style="margin-bottom: 20px;">
+          <label class="checkbox-label">
+            <input type="checkbox" id="setting-enable-ai" checked>
+            <span>Enable AI Context Permutations & Executive Briefing</span>
+          </label>
+        </div>
+
+        <div id="test-status-box" style="font-family:var(--font-mono);font-size:11px;margin-bottom:14px;display:none;"></div>
+
+        <div style="display:flex;justify-content:space-between;gap:10px;">
+          <button type="button" id="btn-test-ai" class="btn-profile-link">Test Connection</button>
+          <button type="submit" class="btn-launch-scan" style="padding:8px 20px;">Save Settings</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/graph.js"></script>

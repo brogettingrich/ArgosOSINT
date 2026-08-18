@@ -20,9 +20,73 @@
   letter-spacing: -0.2px;
 }
 
+/* Header Live AI Status Pill */
+.ai-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.ai-status-pill .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.ai-status-pill.online {
+  background: rgba(56, 239, 125, 0.08);
+  border: 1px solid var(--status-found);
+  color: var(--status-found);
+}
+
+.ai-status-pill.online .status-dot {
+  background: var(--status-found);
+  box-shadow: 0 0 8px var(--status-found);
+}
+
+.ai-status-pill.offline {
+  background: rgba(255, 75, 75, 0.08);
+  border: 1px solid var(--status-error);
+  color: var(--status-error);
+}
+
+.ai-status-pill.offline .status-dot {
+  background: var(--status-error);
+}
+
+.ai-status-pill:hover {
+  filter: brightness(1.2);
+}
+
+.btn-settings-gear {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-settings-gear:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-active);
+}
+
 .grid-inputs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
 }
@@ -94,6 +158,34 @@
 
 .btn-launch-scan:hover {
   opacity: 0.9;
+}
+
+/* AI Briefing Card */
+.briefing-card {
+  background: #090e14;
+  border: 1px solid #1a2a3a;
+  border-left: 3px solid var(--status-searching);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-top: 16px;
+  margin-bottom: 20px;
+}
+
+.briefing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--status-searching);
+  margin-bottom: 8px;
+}
+
+.briefing-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
 }
 
 /* Permutation Preview Bar */
@@ -337,6 +429,32 @@
 .btn-profile-link:hover {
   background: var(--bg-tertiary);
   border-color: var(--text-secondary);
+}
+
+/* Modal View */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  max-width: 520px;
+  width: 100%;
+  padding: 24px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.8);
 }
 
 /* Relationship Graph Canvas */

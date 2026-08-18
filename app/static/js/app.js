@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFormSubmit();
   setupCategoryFilterChips();
   setupDismissControls();
+  setupSettingsModal();
+  initLiveHealthCheck();
 });
 
 function setupNavigation() {
@@ -51,7 +53,6 @@ function updateSubFilterBar() {
   const subBar = document.getElementById('sub-filter-row');
   if (!subBar) return;
 
-  // If filtered by category (e.g. Social, Developer, Gaming, Media), show platforms inside that category
   if (['Social', 'Developer', 'Gaming', 'Media'].includes(activeCategoryFilter)) {
     const categoryFindings = currentFindings.filter(f => f.category === activeCategoryFilter);
     const uniqueSites = Array.from(new Set(categoryFindings.map(f => f.site)));
@@ -109,11 +110,160 @@ function setupDismissControls() {
       currentEmailInfo = null;
       currentPhoneInfo = null;
       document.getElementById('findings-count').innerText = '0 Findings';
+      document.getElementById('ai-briefing-card').style.display = 'none';
       updateSubFilterBar();
       renderFindingsGrid();
       resetBtn.style.display = 'none';
     });
   }
+}
+
+async function checkAIHealth() {
+  const statusPill = document.getElementById('ai-global-status');
+  const statusText = document.getElementById('ai-status-text');
+  if (!statusPill || !statusText) return;
+
+  try {
+    const res = await fetch('/api/settings/health').then(r => r.json());
+    statusText.innerText = res.label;
+    statusPill.className = 'ai-status-pill ' + (res.online ? 'online' : 'offline');
+  } catch (e) {
+    statusText.innerText = 'AI: OFFLINE (SERVER UNREACHABLE)';
+    statusPill.className = 'ai-status-pill offline';
+  }
+}
+
+function initLiveHealthCheck() {
+  checkAIHealth();
+  setInterval(checkAIHealth, 45000); // Check every 45 seconds
+
+  const statusPill = document.getElementById('ai-global-status');
+  if (statusPill) {
+    statusPill.addEventListener('click', () => {
+      const modal = document.getElementById('settings-modal');
+      if (modal) modal.style.display = 'flex';
+    });
+  }
+}
+
+async function setupSettingsModal() {
+  const modal = document.getElementById('settings-modal');
+  const openBtn = document.getElementById('btn-open-settings');
+  const closeBtn = document.getElementById('btn-close-settings');
+  const form = document.getElementById('settings-form');
+  const providerSelect = document.getElementById('setting-provider');
+  const keyInput = document.getElementById('setting-api-key');
+  const modelInput = document.getElementById('setting-model');
+  const hostInput = document.getElementById('setting-host');
+  const enableAiChk = document.getElementById('setting-enable-ai');
+  const groupKey = document.getElementById('group-api-key');
+  const groupHost = document.getElementById('group-ollama-host');
+  const toggleKeyBtn = document.getElementById('btn-toggle-key');
+  const testBtn = document.getElementById('btn-test-ai');
+  const testStatus = document.getElementById('test-status-box');
+
+  let savedLocal = {};
+  try {
+    savedLocal = JSON.parse(localStorage.getItem('argos_ai_settings') || '{}');
+  } catch(e) {}
+
+  const serverSettings = await fetch('/api/settings').then(r => r.json());
+  const currentSettings = { ...serverSettings, ...savedLocal };
+
+  if (currentSettings.ai_provider) providerSelect.value = currentSettings.ai_provider;
+  if (currentSettings.ai_api_key) keyInput.value = currentSettings.ai_api_key;
+  if (currentSettings.ai_model) modelInput.value = currentSettings.ai_model;
+  if (currentSettings.ai_host) hostInput.value = currentSettings.ai_host;
+  enableAiChk.checked = currentSettings.enable_ai !== false;
+
+  const updateVisibility = () => {
+    if (providerSelect.value === 'groq') {
+      groupKey.style.display = 'flex';
+      groupHost.style.display = 'none';
+      if (!modelInput.value || modelInput.value.includes('llama3.2')) {
+        modelInput.value = 'llama-3.3-70b-versatile';
+      }
+    } else {
+      groupKey.style.display = 'none';
+      groupHost.style.display = 'flex';
+      if (!modelInput.value || modelInput.value.includes('llama-3.3')) {
+        modelInput.value = 'llama3.2';
+      }
+    }
+  };
+
+  providerSelect.addEventListener('change', updateVisibility);
+  updateVisibility();
+
+  openBtn.addEventListener('click', () => {
+    modal.style.display = 'flex';
+  });
+
+  closeBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+
+  toggleKeyBtn.addEventListener('click', () => {
+    if (keyInput.type === 'password') {
+      keyInput.type = 'text';
+      toggleKeyBtn.innerText = 'Hide';
+    } else {
+      keyInput.type = 'password';
+      toggleKeyBtn.innerText = 'Show';
+    }
+  });
+
+  testBtn.addEventListener('click', async () => {
+    testStatus.style.display = 'block';
+    testStatus.style.color = 'var(--text-secondary)';
+    testStatus.innerText = 'Testing AI connection...';
+
+    const payload = {
+      ai_provider: providerSelect.value,
+      ai_api_key: keyInput.value.trim(),
+      ai_model: modelInput.value.trim(),
+      ai_host: hostInput.value.trim(),
+      enable_ai: enableAiChk.checked
+    };
+
+    const res = await fetch('/api/settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(r => r.json());
+
+    if (res.success) {
+      testStatus.style.color = 'var(--status-found)';
+      testStatus.innerText = res.message;
+    } else {
+      testStatus.style.color = 'var(--status-error)';
+      testStatus.innerText = `Failed: ${res.error}`;
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      ai_provider: providerSelect.value,
+      ai_api_key: keyInput.value.trim(),
+      ai_model: modelInput.value.trim(),
+      ai_host: hostInput.value.trim(),
+      enable_ai: enableAiChk.checked
+    };
+
+    localStorage.setItem('argos_ai_settings', JSON.stringify(payload));
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    testStatus.style.display = 'block';
+    testStatus.style.color = 'var(--status-found)';
+    testStatus.innerText = 'Settings saved permanently!';
+    checkAIHealth();
+    setTimeout(() => { modal.style.display = 'none'; }, 800);
+  });
 }
 
 function setupPermutationPreview() {
@@ -168,6 +318,7 @@ function startReconScan() {
   const email = document.getElementById('input-email').value.trim();
   const phone = document.getElementById('input-phone').value.trim();
   const realName = document.getElementById('input-name').value.trim();
+  const location = document.getElementById('input-location').value.trim();
   const fuzzy = document.getElementById('chk-fuzzy').checked;
 
   if (!username && !email && !phone) {
@@ -182,17 +333,22 @@ function startReconScan() {
   document.getElementById('progress-panel').style.display = 'block';
   document.getElementById('findings-count').innerText = '0 Findings';
   document.getElementById('btn-reset-results').style.display = 'inline-block';
+  document.getElementById('ai-briefing-card').style.display = 'none';
 
   if (currentEventSource) currentEventSource.close();
 
   const params = new URLSearchParams({
-    username, email, phone, real_name: realName, fuzzy, max_perms: 15
+    username, email, phone, real_name: realName, location, fuzzy, max_perms: 15
   });
 
   currentEventSource = new EventSource(`/api/scan/stream?${params.toString()}`);
 
   currentEventSource.onmessage = (event) => {
     const data = JSON.parse(event.data);
+
+    if (data.type === 'status_update') {
+      document.getElementById('progress-detail').innerText = data.message;
+    }
 
     if (data.type === 'email_result') {
       currentEmailInfo = data.data;
@@ -219,6 +375,15 @@ function startReconScan() {
         if (graphVisualizer) {
           graphVisualizer.buildFromScan(username || email || phone, currentFindings, currentEmailInfo, currentPhoneInfo);
         }
+      }
+    }
+
+    if (data.type === 'ai_briefing') {
+      const card = document.getElementById('ai-briefing-card');
+      const text = document.getElementById('briefing-text');
+      if (card && text) {
+        text.innerText = data.briefing;
+        card.style.display = 'block';
       }
     }
 
@@ -256,7 +421,6 @@ function renderFindingsGrid() {
     return item.category === activeCategoryFilter;
   });
 
-  // Apply sub-platform filter if selected
   if (activePlatformFilter !== 'all') {
     filtered = filtered.filter(item => item.site === activePlatformFilter);
   }
