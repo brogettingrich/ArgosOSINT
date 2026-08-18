@@ -3,14 +3,15 @@ let currentEmailInfo = null;
 let currentPhoneInfo = null;
 let graphVisualizer = null;
 let currentEventSource = null;
-let activeFilter = 'all';
+let activeCategoryFilter = 'all';
+let activePlatformFilter = 'all';
 
 document.addEventListener('DOMContentLoaded', () => {
   graphVisualizer = new IntelligenceGraph('graphCanvas');
   setupNavigation();
   setupPermutationPreview();
   setupFormSubmit();
-  setupFilterChips();
+  setupCategoryFilterChips();
   setupDismissControls();
 });
 
@@ -33,15 +34,57 @@ function setupNavigation() {
   });
 }
 
-function setupFilterChips() {
-  document.querySelectorAll('.filter-chip').forEach(chip => {
+function setupCategoryFilterChips() {
+  document.querySelectorAll('#filter-row .filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
-      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('#filter-row .filter-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
-      activeFilter = chip.dataset.filter;
+      activeCategoryFilter = chip.dataset.filter;
+      activePlatformFilter = 'all';
+      updateSubFilterBar();
       renderFindingsGrid();
     });
   });
+}
+
+function updateSubFilterBar() {
+  const subBar = document.getElementById('sub-filter-row');
+  if (!subBar) return;
+
+  // If filtered by category (e.g. Social, Developer, Gaming, Media), show platforms inside that category
+  if (['Social', 'Developer', 'Gaming', 'Media'].includes(activeCategoryFilter)) {
+    const categoryFindings = currentFindings.filter(f => f.category === activeCategoryFilter);
+    const uniqueSites = Array.from(new Set(categoryFindings.map(f => f.site)));
+
+    if (uniqueSites.length > 0) {
+      subBar.style.display = 'flex';
+      subBar.innerHTML = `
+        <button class="sub-chip ${activePlatformFilter === 'all' ? 'active' : ''}" data-site="all">
+          All ${activeCategoryFilter} (${categoryFindings.length})
+        </button>
+      ` + uniqueSites.map(site => {
+        const count = categoryFindings.filter(f => f.site === site).length;
+        return `
+          <button class="sub-chip ${activePlatformFilter === site ? 'active' : ''}" data-site="${site}">
+            ${site} (${count})
+          </button>
+        `;
+      }).join('');
+
+      subBar.querySelectorAll('.sub-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          subBar.querySelectorAll('.sub-chip').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          activePlatformFilter = btn.dataset.site;
+          renderFindingsGrid();
+        });
+      });
+      return;
+    }
+  }
+
+  subBar.style.display = 'none';
+  subBar.innerHTML = '';
 }
 
 function setupDismissControls() {
@@ -66,6 +109,7 @@ function setupDismissControls() {
       currentEmailInfo = null;
       currentPhoneInfo = null;
       document.getElementById('findings-count').innerText = '0 Findings';
+      updateSubFilterBar();
       renderFindingsGrid();
       resetBtn.style.display = 'none';
     });
@@ -170,6 +214,7 @@ function startReconScan() {
       if (res.found) {
         currentFindings.push(res);
         document.getElementById('findings-count').innerText = `${currentFindings.length} Discovered`;
+        updateSubFilterBar();
         renderFindingsGrid();
         if (graphVisualizer) {
           graphVisualizer.buildFromScan(username || email || phone, currentFindings, currentEmailInfo, currentPhoneInfo);
@@ -180,6 +225,7 @@ function startReconScan() {
     if (data.type === 'complete') {
       currentEventSource.close();
       document.getElementById('progress-detail').innerText = 'Reconnaissance Complete';
+      updateSubFilterBar();
       renderFindingsGrid();
     }
   };
@@ -187,6 +233,7 @@ function startReconScan() {
   currentEventSource.onerror = () => {
     if (currentEventSource) currentEventSource.close();
     document.getElementById('progress-detail').innerText = 'Reconnaissance Complete';
+    updateSubFilterBar();
     renderFindingsGrid();
   };
 }
@@ -195,19 +242,24 @@ function renderFindingsGrid() {
   const grid = document.getElementById('results-grid');
   grid.innerHTML = '';
 
-  if (currentEmailInfo && currentEmailInfo.valid_syntax && (activeFilter === 'all' || activeFilter === 'exact')) {
+  if (currentEmailInfo && currentEmailInfo.valid_syntax && (activeCategoryFilter === 'all' || activeCategoryFilter === 'exact')) {
     addEmailCard(currentEmailInfo);
   }
-  if (currentPhoneInfo && currentPhoneInfo.valid && (activeFilter === 'all' || activeFilter === 'exact')) {
+  if (currentPhoneInfo && currentPhoneInfo.valid && (activeCategoryFilter === 'all' || activeCategoryFilter === 'exact')) {
     addPhoneCard(currentPhoneInfo);
   }
 
-  const filtered = currentFindings.filter(item => {
-    if (activeFilter === 'all') return true;
-    if (activeFilter === 'exact') return item.is_seed;
-    if (activeFilter === 'permutation') return !item.is_seed;
-    return item.category === activeFilter;
+  let filtered = currentFindings.filter(item => {
+    if (activeCategoryFilter === 'all') return true;
+    if (activeCategoryFilter === 'exact') return item.is_seed;
+    if (activeCategoryFilter === 'permutation') return !item.is_seed;
+    return item.category === activeCategoryFilter;
   });
+
+  // Apply sub-platform filter if selected
+  if (activePlatformFilter !== 'all') {
+    filtered = filtered.filter(item => item.site === activePlatformFilter);
+  }
 
   filtered.sort((a, b) => (b.is_seed ? 1 : 0) - (a.is_seed ? 1 : 0));
 

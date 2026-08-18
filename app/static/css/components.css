@@ -130,7 +130,7 @@
   color: var(--text-secondary);
   font-size: 11px;
   font-family: var(--font-mono);
-  padding: 4px 12px;
+  padding: 5px 12px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -145,6 +145,41 @@
   background: var(--bg-tertiary);
   border-color: var(--text-primary);
   color: var(--text-primary);
+}
+
+/* Sub-Filter Bar */
+.sub-filter-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.sub-chip {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sub-chip:hover {
+  color: var(--text-primary);
+}
+
+.sub-chip.active {
+  background: var(--bg-tertiary);
+  border-color: var(--border-active);
+  color: var(--status-searching);
+  font-weight: 600;
 }
 
 /* Progress & Live Telemetry */
