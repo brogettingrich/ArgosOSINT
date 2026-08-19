@@ -297,47 +297,5 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "url_template": "https://keybase.io/{}",
         "check_type": "status_code",
         "error_code": 404
-    },
-
-    # --- REGIONAL PACKS (Strictly gated by target country) ---
-    {
-        "name": "FXP", "category": "Regional", "country": "il",
-        "url_template": "https://www.fxp.co.il/member.php?username={}",
-        "check_type": "status_code", "error_code": 404
-    },
-    {
-        "name": "Tapuz", "category": "Regional", "country": "il",
-        "url_template": "https://www.tapuz.co.il/members/{}/",
-        "check_type": "status_code", "error_code": 404
-    },
-    {
-        "name": "Stips", "category": "Regional", "country": "il",
-        "url_template": "https://stips.co.il/profile/{}",
-        "check_type": "status_code", "error_code": 404
-    },
-    {
-        "name": "Rotter.net", "category": "Regional", "country": "il",
-        "url_template": "https://rotter.net/forum/user/{}",
-        "check_type": "status_code", "error_code": 404
-    },
-    {
-        "name": "Xing", "category": "Regional", "country": "de",
-        "url_template": "https://www.xing.com/profile/{}",
-        "check_type": "status_code", "error_code": 404
-    },
-    {
-        "name": "VKontakte", "category": "Regional", "country": "ru",
-        "url_template": "https://vk.com/{}",
-        "check_type": "status_code", "error_code": 404
-    },
-    {
-        "name": "Habr", "category": "Regional", "country": "ru",
-        "url_template": "https://habr.com/ru/users/{}/",
-        "check_type": "status_code", "error_code": 404
-    },
-    {
-        "name": "Bilibili", "category": "Regional", "country": "cn",
-        "url_template": "https://space.bilibili.com/{}",
-        "check_type": "status_code", "error_code": 404
     }
 ]

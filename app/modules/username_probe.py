@@ -1,5 +1,6 @@
 import asyncio
 import re
+import html
 import time
 import httpx
 from typing import AsyncGenerator, Dict, Any, List, Optional
@@ -59,7 +60,7 @@ def is_name_nearly_identical(candidate_name: str, target_name: str, target_handl
 
     return False
 
-def extract_html_metadata(html: str) -> Dict[str, Any]:
+def extract_html_metadata(html_text: str) -> Dict[str, Any]:
     meta = {
         "display_name": None,
         "bio": None,
@@ -68,36 +69,36 @@ def extract_html_metadata(html: str) -> Dict[str, Any]:
         "mentioned_handles": [],
         "mentioned_emails": []
     }
-    if not html or len(html) < 50:
+    if not html_text or len(html_text) < 50:
         return meta
 
     # 1. og:title
-    title_match = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']', html, re.I)
+    title_match = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']', html_text, re.I)
     if not title_match:
-        title_match = re.search(r'<title>(.*?)</title>', html, re.I)
+        title_match = re.search(r'<title>(.*?)</title>', html_text, re.I)
     if title_match:
-        raw_t = title_match.group(1).split('|')[0].split('•')[0].split('-')[0].strip()
+        raw_t = html.unescape(title_match.group(1)).split('|')[0].split('•')[0].split('-')[0].strip()
         if not any(c in raw_t.lower() for c in ["404", "not found", "login", "browser", "challenge", "facebook", "error"]):
             meta["display_name"] = raw_t
 
     # 2. og:description / Bio
-    desc_match = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', html, re.I)
+    desc_match = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', html_text, re.I)
     if not desc_match:
-        desc_match = re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html, re.I)
+        desc_match = re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html_text, re.I)
     if desc_match:
-        bio_text = desc_match.group(1).strip()
+        bio_text = html.unescape(desc_match.group(1)).strip()
         if not any(c in bio_text.lower() for c in ["404", "not found", "accept tips with 0-5%"]):
             meta["bio"] = bio_text
             meta["mentioned_handles"] = list(set(re.findall(r'@([a-zA-Z0-9._]{3,30})', bio_text)))
             meta["mentioned_emails"] = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', bio_text)))
 
     # 3. og:image / Avatar
-    img_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', html, re.I)
+    img_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', html_text, re.I)
     if img_match:
         meta["avatar_url"] = img_match.group(1).strip()
 
     # 4. Outbound links
-    outbound = re.findall(r'href=["\'](https?://(?:www\.)?(?:linktr\.ee|beacons\.ai|carrd\.co|github\.com|twitter\.com|x\.com|t\.me)/[a-zA-Z0-9._/-]+)["\']', html, re.I)
+    outbound = re.findall(r'href=["\'](https?://(?:www\.)?(?:linktr\.ee|beacons\.ai|carrd\.co|github\.com|twitter\.com|x\.com|t\.me)/[a-zA-Z0-9._/-]+)["\']', html_text, re.I)
     meta["outbound_links"] = list(set(outbound))[:5]
 
     return meta
@@ -124,24 +125,28 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
     async with GLOBAL_SEMAPHORE:
         async with dom_sem:
             try:
-                # 1. INSTAGRAM PROBE
+                # 1. INSTAGRAM PROBE (HTML OpenGraph Validation)
                 if special_handler == "instagram":
-                    insta_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
-                    h = {**COMMON_HEADERS, "X-IG-App-ID": "936619743392459", "Referer": f"https://www.instagram.com/{username}/"}
-                    resp = await client.get(insta_url, headers=h, timeout=REQUEST_TIMEOUT)
+                    insta_url = f"https://www.instagram.com/{username}/"
+                    resp = await client.get(insta_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
-                        try:
-                            ud = resp.json().get("data", {}).get("user", {})
-                            if ud:
+                        text = resp.text
+                        m_title = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']', text, re.I)
+                        m_desc = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', text, re.I)
+                        m_img = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', text, re.I)
+
+                        if m_title:
+                            t_clean = html.unescape(m_title.group(1)).strip()
+                            if f"@{username.lower()}" in t_clean.lower() or f"({username.lower()})" in t_clean.lower() or username.lower() in t_clean.lower():
+                                name_part = t_clean.split('(@')[0].split('(')[0].strip()
+                                desc_clean = html.unescape(m_desc.group(1)).strip() if m_desc else ""
                                 result["found"] = True
                                 result["metadata"] = {
-                                    "display_name": ud.get("full_name"),
-                                    "bio": ud.get("biography"),
-                                    "avatar_url": ud.get("profile_pic_url_hd") or ud.get("profile_pic_url")
+                                    "display_name": name_part or username,
+                                    "bio": desc_clean,
+                                    "avatar_url": m_img.group(1).strip() if m_img else None
                                 }
-                        except Exception:
-                            pass
 
                 # 2. TIKTOK PROBE
                 elif special_handler == "tiktok":
@@ -189,18 +194,14 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                             "page not found"
                         ]
                         title_m = re.search(r'<title>(.*?)</title>', text, re.I)
-                        title_val = title_m.group(1).strip() if title_m else ""
+                        title_val = html.unescape(title_m.group(1)).strip() if title_m else ""
                         is_not_found = any(m in text.lower() for m in not_found_markers) or title_val.lower() in ["facebook", "log in to facebook", "error"]
 
                         if not is_not_found:
-                            # Only proceed if the candidate profile name is nearly identical
                             if is_name_nearly_identical(title_val, seed_name, username):
                                 result["found"] = True
-                                # Scrape bio snippets and intro items from Facebook HTML
                                 intro_snippets = re.findall(r'<div[^>]*class="[^"]*intro[^"]*"[^>]*>(.*?)</div>', text, re.I)
                                 intro_clean = " • ".join([re.sub(r'<[^>]+>', '', s).strip() for s in intro_snippets if s])
-                                
-                                # Scrape recent public post snippets
                                 post_snippets = re.findall(r'<div[^>]*class="[^"]*story_body_container[^"]*"[^>]*>(.*?)</div>', text, re.I)
                                 clean_posts = [re.sub(r'<[^>]+>', '', p).strip() for p in post_snippets[:2] if len(p) > 20]
 

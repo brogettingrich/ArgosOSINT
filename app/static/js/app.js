@@ -42,7 +42,13 @@ function setupNavigation() {
       if (targetView) targetView.style.display = 'block';
 
       if (btn.dataset.target === 'view-graph' && graphVisualizer) {
-        graphVisualizer.resize();
+        setTimeout(() => {
+          graphVisualizer.resize();
+          const target = document.getElementById('input-username').value || document.getElementById('input-name').value || 'Target';
+          if (currentFindings.length > 0 || currentEmailInfo || currentPhoneInfo) {
+            graphVisualizer.buildFromScan(target, currentFindings, currentEmailInfo, currentPhoneInfo);
+          }
+        }, 60);
       }
       if (btn.dataset.target === 'view-history') {
         loadHistory();
