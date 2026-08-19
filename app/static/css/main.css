@@ -1,21 +1,20 @@
 :root {
-  --bg-primary: #000000;
-  --bg-secondary: #080808;
-  --bg-tertiary: #101010;
-  --bg-card: #0d0d0d;
-  --bg-card-hover: #141414;
-  --border-color: #1a1a1a;
-  --border-active: #333333;
-  --text-primary: #f0f0f0;
-  --text-secondary: #888888;
-  --text-muted: #555555;
+  --bg-primary: #080a0f;
+  --bg-secondary: #0e121a;
+  --bg-tertiary: #141b26;
+  --bg-card: #0c1018;
+  --bg-card-hover: #121722;
+  --border-color: #1a2232;
+  --border-active: #2a364e;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
   --accent-color: #ffffff;
-  --accent-glow: rgba(255, 255, 255, 0.15);
-  --status-found: #38ef7d;
-  --status-found-bg: rgba(56, 239, 125, 0.08);
-  --status-searching: #4facfe;
-  --status-warn: #f6d365;
-  --status-error: #ff4b4b;
+  --status-found: #10b981;
+  --status-found-bg: rgba(16, 185, 129, 0.08);
+  --status-searching: #06b6d4;
+  --status-warn: #f59e0b;
+  --status-error: #ef4444;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
 }
@@ -31,7 +30,7 @@ body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   min-height: 100vh;
   display: flex;
@@ -46,13 +45,13 @@ a {
 
 /* Header & Navigation */
 .app-header {
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(12px);
+  background: rgba(8, 10, 15, 0.95);
+  backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
   z-index: 100;
-  padding: 12px 20px;
+  padding: 14px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -65,10 +64,10 @@ a {
 }
 
 .brand-logo {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 1.5px solid var(--status-found);
+  border: 1.5px solid var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -86,7 +85,7 @@ a {
 .brand-title {
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
   color: var(--text-primary);
 }
 
@@ -96,24 +95,24 @@ a {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
-  padding: 2px 6px;
+  padding: 2px 8px;
   border-radius: 4px;
   letter-spacing: 0.5px;
 }
 
 .nav-tabs {
   display: flex;
-  gap: 6px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  padding: 3px;
   border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
 }
 
 .nav-tab-btn {
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 500;
   padding: 6px 14px;
@@ -122,17 +121,26 @@ a {
   transition: all 0.15s ease;
 }
 
+.nav-tab-btn:hover {
+  color: var(--text-primary);
+}
+
 .nav-tab-btn.active {
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  border: 1px solid var(--border-active);
+  border: 1px solid var(--border-color);
 }
 
-/* Main Container */
 .main-container {
-  flex: 1;
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
-  padding: 20px;
+  padding: 28px 24px;
+  flex: 1;
+}
+
+.view-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }

@@ -101,7 +101,7 @@ async def scan_stream_endpoint(
         total_probes = max(1, len(usernames_to_scan) * active_cat_len)
         completed_probes = 0
 
-        async for result in scan_usernames_async(usernames_to_scan, location=location):
+        async for result in scan_usernames_async(usernames_to_scan, location=location, seed_name=names_list[0] if names_list else ""):
             completed_probes += 1
             if result.get("found"):
                 cand_meta = {
@@ -146,15 +146,43 @@ async def save_settings_endpoint(payload: dict):
         repo.set_setting(k, str(v))
     return {"status": "saved"}
 
-@app.post("/api/ai/test-connection")
-async def test_ai_connection_endpoint(payload: dict):
-    provider = payload.get("provider", "groq")
-    api_key = payload.get("api_key", "")
-    model = payload.get("model", "")
-    host = payload.get("host", "http://127.0.0.1:11434")
+@app.get("/api/settings/health")
+async def get_settings_health():
+    settings = repo.get_all_settings()
+    enabled = settings.get("enable_ai", "true") != "false"
+    provider = settings.get("ai_provider", "groq")
+    api_key = settings.get("ai_api_key", "")
+    model = settings.get("ai_model", DEFAULT_GROQ_MODEL)
+    host = settings.get("ai_host", DEFAULT_LOCAL_HOST)
+
+    if not enabled:
+        return {"online": False, "provider": "disabled", "model": "none", "label": "AI: STANDBY (DISABLED)"}
+
+    res = await AIEngine.test_connection(provider=provider, api_key=api_key, model=model, host=host)
+    if res.get("success"):
+        model_name = model.split('/')[-1]
+        return {"online": True, "provider": provider, "model": model, "label": f"AI ENGINE: ONLINE ({provider.upper()} {model_name})"}
+    else:
+        return {"online": False, "provider": provider, "model": model, "label": "AI ENGINE: OFFLINE (CHECK SETTINGS)"}
+
+@app.post("/api/settings/test")
+async def test_settings_connection(payload: dict):
+    provider = payload.get("ai_provider") or payload.get("provider", "groq")
+    api_key = payload.get("ai_api_key") or payload.get("api_key", "")
+    model = payload.get("ai_model") or payload.get("model", "")
+    host = payload.get("ai_host") or payload.get("host", "http://127.0.0.1:11434")
     return await AIEngine.test_connection(provider=provider, api_key=api_key, model=model, host=host)
 
+@app.get("/api/models/live")
+async def get_live_models_endpoint(key: str = ""):
+    models = await AIEngine.get_available_models(provider="groq", api_key=key)
+    return {"models": models}
+
+@app.post("/api/ai/test-connection")
+async def test_ai_connection_legacy(payload: dict):
+    return await test_settings_connection(payload)
+
 @app.get("/api/ai/models")
-async def get_models_endpoint(provider: str = "groq", api_key: str = "", host: str = "http://127.0.0.1:11434"):
+async def get_models_legacy(provider: str = "groq", api_key: str = "", host: str = "http://127.0.0.1:11434"):
     models = await AIEngine.get_available_models(provider=provider, api_key=api_key, host=host)
     return {"models": models}

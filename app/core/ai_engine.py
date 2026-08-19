@@ -55,9 +55,27 @@ class AIEngine:
 
                     chat_models.sort(key=sort_priority)
                     return chat_models
-        except Exception as e:
-            logger.warning(f"Failed to fetch live Groq models: {e}")
+        except Exception:
+            pass
         return []
+
+    @staticmethod
+    async def get_available_models(provider: str = "groq", api_key: str = "", host: str = "") -> List[Dict[str, str]]:
+        if provider == "groq":
+            live = await AIEngine.fetch_live_groq_models(api_key)
+            if live:
+                return live
+            return [
+                {"id": "openai/gpt-oss-20b", "name": "OpenAI GPT-OSS 20B (Primary - Ultra-Fast)"},
+                {"id": "openai/gpt-oss-120b", "name": "OpenAI GPT-OSS 120B (Deep Reasoning)"},
+                {"id": "qwen/qwen3.6-27b", "name": "Qwen 3.6 27B"},
+                {"id": "groq/compound-mini", "name": "Groq Compound Mini"}
+            ]
+        return [
+            {"id": "llama3:latest", "name": "Llama 3 (Local Ollama)"},
+            {"id": "mistral:latest", "name": "Mistral (Local Ollama)"},
+            {"id": "deepseek-r1:latest", "name": "DeepSeek R1 (Local Ollama)"}
+        ]
 
     @staticmethod
     async def test_connection(provider: str, api_key: str = "", model: str = "", host: str = "") -> Dict[str, Any]:

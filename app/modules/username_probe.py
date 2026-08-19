@@ -10,7 +10,6 @@ from app.core.permutations import resolve_country
 
 SITES_DB = SITES_CATALOG
 
-# Global & Domain Concurrency Semaphores
 DOMAIN_SEMAPHORES: Dict[str, asyncio.Semaphore] = {}
 GLOBAL_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
@@ -20,7 +19,6 @@ def get_domain_semaphore(url: str) -> asyncio.Semaphore:
         DOMAIN_SEMAPHORES[domain] = asyncio.Semaphore(3)
     return DOMAIN_SEMAPHORES[domain]
 
-# Anti-Bot & False Positive Challenge Signatures
 CHALLENGE_PATTERNS = [
     "checking your browser",
     "just a moment...",
@@ -33,8 +31,33 @@ CHALLENGE_PATTERNS = [
     "page not found",
     "account doesn't exist",
     "couldn't find this account",
-    "sorry, this page isn't available"
+    "sorry, this page isn't available",
+    "accept tips with 0-5%"
 ]
+
+def is_name_nearly_identical(candidate_name: str, target_name: str, target_handle: str) -> bool:
+    if not candidate_name:
+        return False
+    c_clean = candidate_name.strip().lower()
+    t_clean = target_name.strip().lower() if target_name else ""
+    h_clean = target_handle.strip().lower() if target_handle else ""
+
+    if t_clean:
+        if t_clean == c_clean or t_clean in c_clean or c_clean in t_clean:
+            return True
+        c_tokens = set(re.findall(r'[a-zA-Z]{3,}', c_clean))
+        t_tokens = set(re.findall(r'[a-zA-Z]{3,}', t_clean))
+        if c_tokens and t_tokens and len(c_tokens.intersection(t_tokens)) >= min(len(t_tokens), 2):
+            return True
+        return False
+
+    if h_clean:
+        h_words = set(re.findall(r'[a-zA-Z]{3,}', h_clean.replace('_', ' ').replace('.', ' ')))
+        c_words = set(re.findall(r'[a-zA-Z]{3,}', c_clean))
+        if h_words and c_words and len(h_words.intersection(c_words)) > 0:
+            return True
+
+    return False
 
 def extract_html_metadata(html: str) -> Dict[str, Any]:
     meta = {
@@ -54,7 +77,7 @@ def extract_html_metadata(html: str) -> Dict[str, Any]:
         title_match = re.search(r'<title>(.*?)</title>', html, re.I)
     if title_match:
         raw_t = title_match.group(1).split('|')[0].split('•')[0].split('-')[0].strip()
-        if not any(c in raw_t.lower() for c in ["404", "not found", "login", "browser", "challenge"]):
+        if not any(c in raw_t.lower() for c in ["404", "not found", "login", "browser", "challenge", "facebook", "error"]):
             meta["display_name"] = raw_t
 
     # 2. og:description / Bio
@@ -79,7 +102,7 @@ def extract_html_metadata(html: str) -> Dict[str, Any]:
 
     return meta
 
-async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], username: str) -> Dict[str, Any]:
+async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], username: str, seed_name: str = "") -> Dict[str, Any]:
     url = site["url_template"].format(username)
     profile_url = site.get("profile_url", site["url_template"]).format(username)
     special_handler = site.get("special_handler")
@@ -144,7 +167,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         result["found"] = True
                         result["metadata"] = extract_html_metadata(resp.text)
 
-                # 4. FACEBOOK PROBE
+                # 4. FACEBOOK PROBE (Deep Bio & Post Inspection on Name Match Only)
                 elif special_handler == "facebook":
                     fb_url = f"https://m.facebook.com/{username}"
                     h_fb = {
@@ -168,14 +191,34 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         title_m = re.search(r'<title>(.*?)</title>', text, re.I)
                         title_val = title_m.group(1).strip() if title_m else ""
                         is_not_found = any(m in text.lower() for m in not_found_markers) or title_val.lower() in ["facebook", "log in to facebook", "error"]
-                        if not is_not_found:
-                            result["found"] = True
-                            result["metadata"] = {
-                                "display_name": title_val,
-                                "bio": f"Facebook profile: {title_val}"
-                            }
 
-                # 4. BLUESKY AT-PROTOCOL PROBE
+                        if not is_not_found:
+                            # Only proceed if the candidate profile name is nearly identical
+                            if is_name_nearly_identical(title_val, seed_name, username):
+                                result["found"] = True
+                                # Scrape bio snippets and intro items from Facebook HTML
+                                intro_snippets = re.findall(r'<div[^>]*class="[^"]*intro[^"]*"[^>]*>(.*?)</div>', text, re.I)
+                                intro_clean = " • ".join([re.sub(r'<[^>]+>', '', s).strip() for s in intro_snippets if s])
+                                
+                                # Scrape recent public post snippets
+                                post_snippets = re.findall(r'<div[^>]*class="[^"]*story_body_container[^"]*"[^>]*>(.*?)</div>', text, re.I)
+                                clean_posts = [re.sub(r'<[^>]+>', '', p).strip() for p in post_snippets[:2] if len(p) > 20]
+
+                                bio_combined = f"Facebook: {title_val}"
+                                if intro_clean:
+                                    bio_combined += f" | {intro_clean}"
+                                if clean_posts:
+                                    post_preview = clean_posts[0][:120].replace('"', "'")
+                                    bio_combined += f" | Recent post: '{post_preview}'"
+
+                                result["metadata"] = {
+                                    "display_name": title_val,
+                                    "bio": bio_combined
+                                }
+                            else:
+                                result["found"] = False
+
+                # 5. BLUESKY PROBE
                 elif special_handler == "bluesky":
                     bsky_api = f"https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={username}.bsky.social"
                     resp = await client.get(bsky_api, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -190,7 +233,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                 "avatar_url": data.get("avatar")
                             }
 
-                # 5. GITHUB API PROBE
+                # 6. GITHUB API PROBE
                 elif special_handler == "github":
                     gh_url = f"https://api.github.com/users/{username}"
                     resp = await client.get(gh_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -205,7 +248,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                             "outbound_links": [data.get("blog")] if data.get("blog") else []
                         }
 
-                # 6. TELEGRAM WEB PROBE
+                # 7. TELEGRAM WEB PROBE
                 elif special_handler == "telegram":
                     tg_url = f"https://t.me/{username}"
                     resp = await client.get(tg_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -215,7 +258,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         result["found"] = True
                         result["metadata"] = extract_html_metadata(text)
 
-                # 7. STEAM XML PROBE
+                # 8. STEAM XML PROBE
                 elif special_handler == "steam":
                     steam_url = f"https://steamcommunity.com/id/{username}/?xml=1"
                     resp = await client.get(steam_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -228,19 +271,17 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                             meta["display_name"] = st_name.group(1)
                         result["metadata"] = meta
 
-                # 8. STANDARD MULTI-FACTOR VERIFICATION
+                # 9. STANDARD MULTI-FACTOR VERIFICATION
                 else:
                     resp = await client.get(url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT, follow_redirects=True)
                     result["status_code"] = resp.status_code
                     final_url = str(resp.url).lower()
                     text = resp.text.lower()
 
-                    # Filter login redirects
                     is_redirect_bounce = any(
                         p in final_url for p in ["/login", "/signin", "/signup", "/register", "404", "error", "/explore"]
                     ) and not (f"/{username.lower()}" in final_url or f"@{username.lower()}" in final_url)
 
-                    # Filter challenge and error patterns
                     has_challenge_or_error = any(p in text for p in CHALLENGE_PATTERNS)
 
                     if resp.status_code == 200 and not is_redirect_bounce and not has_challenge_or_error:
@@ -255,16 +296,14 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
     result["latency_ms"] = int((time.time() - start_time) * 1000)
     return result
 
-async def scan_usernames_async(usernames: List[str], location: str = "") -> AsyncGenerator[Dict[str, Any], None]:
+async def scan_usernames_async(usernames: List[str], location: str = "", seed_name: str = "") -> AsyncGenerator[Dict[str, Any], None]:
     country_info = resolve_country(location)
     target_country = country_info["code"] if country_info else ""
 
-    # Filter catalog: include general sites + only matching regional sites
     active_catalog = []
     for site in SITES_CATALOG:
         req_country = site.get("country")
         if req_country:
-            # Regional site: only include if user's country matches
             if target_country and target_country == req_country:
                 active_catalog.append(site)
         else:
@@ -276,7 +315,7 @@ async def scan_usernames_async(usernames: List[str], location: str = "") -> Asyn
         limits=httpx.Limits(max_connections=MAX_CONCURRENT_REQUESTS, max_keepalive_connections=15)
     ) as client:
         for u in usernames:
-            tasks = [check_single_site(client, site, u) for site in active_catalog]
+            tasks = [check_single_site(client, site, u, seed_name=seed_name) for site in active_catalog]
             for coro in asyncio.as_completed(tasks):
                 res = await coro
                 yield res
