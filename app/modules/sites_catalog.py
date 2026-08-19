@@ -24,8 +24,13 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "check_type": "special_api", "special_handler": "pinterest"
     },
     {
+        "name": "Facebook", "category": "Social",
+        "url_template": "https://www.facebook.com/{}",
+        "check_type": "special_api", "special_handler": "facebook"
+    },
+    {
         "name": "Reddit", "category": "Social",
-        "url_template": "https://www.reddit.com/user/{}/about.json",
+        "url_template": "https://www.reddit.com/user/{}/",
         "profile_url": "https://www.reddit.com/user/{}/",
         "check_type": "special_api", "special_handler": "reddit"
     },

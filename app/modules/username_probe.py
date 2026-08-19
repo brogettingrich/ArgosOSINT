@@ -135,19 +135,44 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                 "avatar_url": data.get("thumbnail_url")
                             }
 
-                # 3. REDDIT PUBLIC JSON PROBE
+                # 3. REDDIT PROBE
                 elif special_handler == "reddit":
-                    r_url = f"https://www.reddit.com/user/{username}/about.json"
+                    r_url = f"https://old.reddit.com/user/{username}"
                     resp = await client.get(r_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
-                        data = resp.json().get("data", {})
-                        if data.get("name") and not data.get("is_suspended"):
+                        result["found"] = True
+                        result["metadata"] = extract_html_metadata(resp.text)
+
+                # 4. FACEBOOK PROBE
+                elif special_handler == "facebook":
+                    fb_url = f"https://m.facebook.com/{username}"
+                    h_fb = {
+                        **COMMON_HEADERS,
+                        "Sec-Fetch-Dest": "document",
+                        "Sec-Fetch-Mode": "navigate",
+                        "Sec-Fetch-Site": "none",
+                        "Sec-Fetch-User": "?1",
+                        "Upgrade-Insecure-Requests": "1"
+                    }
+                    resp = await client.get(fb_url, headers=h_fb, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        text = resp.text
+                        not_found_markers = [
+                            "this content isn't available right now",
+                            "this page isn't available",
+                            "the link you followed may be broken",
+                            "page not found"
+                        ]
+                        title_m = re.search(r'<title>(.*?)</title>', text, re.I)
+                        title_val = title_m.group(1).strip() if title_m else ""
+                        is_not_found = any(m in text.lower() for m in not_found_markers) or title_val.lower() in ["facebook", "log in to facebook", "error"]
+                        if not is_not_found:
                             result["found"] = True
                             result["metadata"] = {
-                                "display_name": data.get("subreddit", {}).get("title") or data.get("name"),
-                                "bio": data.get("subreddit", {}).get("public_description"),
-                                "avatar_url": data.get("icon_img")
+                                "display_name": title_val,
+                                "bio": f"Facebook profile: {title_val}"
                             }
 
                 # 4. BLUESKY AT-PROTOCOL PROBE
