@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import httpx
 from typing import Dict, Any, List, Optional
 
@@ -8,9 +9,19 @@ logger = logging.getLogger("ArgosAI")
 
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
-DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
 DEFAULT_LOCAL_HOST = "http://127.0.0.1:11434"
 DEFAULT_LOCAL_MODEL = "llama3.2"
+
+def strip_reasoning_tags(text: str) -> str:
+    if not text:
+        return ""
+    # Remove <think>...</think> or [REASONING]...[/REASONING] blocks
+    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    cleaned = re.sub(r'\[reasoning\].*?\[/reasoning\]', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r'```json\s*', '', cleaned)
+    cleaned = re.sub(r'```\s*', '', cleaned)
+    return cleaned.strip()
 
 class AIEngine:
     @staticmethod
@@ -25,26 +36,27 @@ class AIEngine:
                 if resp.status_code == 200:
                     data = resp.json()
                     models_data = data.get("data", [])
-                    # Filter for active chat/instruct models
                     chat_models = []
                     for m in models_data:
                         mid = m.get("id", "")
-                        # Ignore guard, whisper, or embeddings
-                        if any(x in mid.lower() for x in ["guard", "whisper", "embed", "vision", "preview", "scout", "maverick"]):
+                        # Ignore whisper, guard, or embeddings
+                        if any(x in mid.lower() for x in ["whisper", "guard", "embed", "vision"]):
                             continue
-                        if mid.startswith("llama-") or mid.startswith("llama3-") or mid.startswith("mixtral") or mid.startswith("qwen"):
-                            chat_models.append({"id": mid, "name": mid})
-                    
-                    # Sort prioritizing 8B instant, then 70B versatile
-                    def sort_key(item):
+                        chat_models.append({"id": mid, "name": mid})
+
+                    # Sort prioritizing fast general chat models
+                    def sort_priority(item):
                         mid = item["id"]
-                        if "3.1-8b-instant" in mid: return 0
-                        if "3.3-70b-versatile" in mid: return 1
-                        if "3.1-8b" in mid: return 2
-                        if "3-70b" in mid: return 3
+                        if "gpt-oss-20b" in mid: return 0
+                        if "llama-3.1-8b-instant" in mid: return 1
+                        if "gpt-oss-120b" in mid: return 2
+                        if "llama-3.3-70b-versatile" in mid: return 3
+                        if "compound-mini" in mid: return 4
+                        if "allam" in mid: return 5
+                        if "qwen" in mid: return 6
                         return 10
-                    
-                    chat_models.sort(key=sort_key)
+
+                    chat_models.sort(key=sort_priority)
                     return chat_models
         except Exception as e:
             logger.warning(f"Failed to fetch live Groq models: {e}")
@@ -56,12 +68,9 @@ class AIEngine:
             if provider == "groq":
                 clean_key = (api_key or "").strip().strip('"').strip("'")
                 if not clean_key:
-                    return {"success": False, "status": "no_key", "error": "Groq API Key is required (starts with gsk_...)"}
+                    return {"success": False, "status": "no_key", "error": "Groq API Key is required"}
 
                 clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
-                if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b", "gemma2-9b-it"]:
-                    clean_model = DEFAULT_GROQ_MODEL
-
                 headers = {
                     "Authorization": f"Bearer {clean_key}",
                     "Content-Type": "application/json"
@@ -86,6 +95,10 @@ class AIEngine:
 
             elif provider in ["ollama", "local"]:
                 clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
+                # Guard against local host being ArgosOSINT port (8500)
+                if ":8500" in clean_host:
+                    clean_host = DEFAULT_LOCAL_HOST
+
                 clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
 
                 async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
@@ -97,7 +110,7 @@ class AIEngine:
                     except Exception:
                         pass
 
-                    # 2. Test Local OpenAI endpoint
+                    # 2. Test Local OpenAI endpoint (LM Studio / LocalAI)
                     try:
                         r_openai = await client.get(f"{clean_host}/v1/models", timeout=3.0)
                         if r_openai.status_code in [200, 401]:
@@ -108,7 +121,7 @@ class AIEngine:
                     return {
                         "success": False, 
                         "status": "offline", 
-                        "error": f"Local server at {clean_host} unreachable. Make sure Ollama or LM Studio is running, or switch to Groq Cloud API."
+                        "error": f"Local server at {clean_host} unreachable. Make sure Ollama (port 11434) or LM Studio (port 1234) is running, or switch to Groq Cloud API."
                     }
 
             return {"success": False, "status": "error", "error": f"Unknown provider: {provider}"}
@@ -124,9 +137,6 @@ class AIEngine:
                     return None
 
                 clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
-                if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b", "gemma2-9b-it"]:
-                    clean_model = DEFAULT_GROQ_MODEL
-
                 headers = {
                     "Authorization": f"Bearer {clean_key}",
                     "Content-Type": "application/json"
@@ -138,23 +148,21 @@ class AIEngine:
                         {"role": "user", "content": user_prompt}
                     ],
                     "temperature": temperature,
-                    "max_tokens": 800
+                    "max_tokens": 1200
                 }
 
-                async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+                async with httpx.AsyncClient(timeout=12.0, verify=False) as client:
                     resp = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
                     if resp.status_code == 200:
                         data = resp.json()
-                        return data["choices"][0]["message"]["content"].strip()
-                    
-                    if resp.status_code in [400, 404] and clean_model != DEFAULT_GROQ_MODEL:
-                        payload["model"] = DEFAULT_GROQ_MODEL
-                        resp_fb = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
-                        if resp_fb.status_code == 200:
-                            return resp_fb.json()["choices"][0]["message"]["content"].strip()
+                        raw_content = data["choices"][0]["message"]["content"].strip()
+                        return strip_reasoning_tags(raw_content)
 
             elif provider in ["ollama", "local"]:
                 clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
+                if ":8500" in clean_host:
+                    clean_host = DEFAULT_LOCAL_HOST
+
                 clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
 
                 async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
@@ -170,23 +178,9 @@ class AIEngine:
                         }
                         r_ollama = await client.post(f"{clean_host}/api/chat", json=ollama_payload)
                         if r_ollama.status_code == 200:
-                            return r_ollama.json().get("message", {}).get("content", "").strip()
-                    except Exception:
-                        pass
-
-                    try:
-                        openai_payload = {
-                            "model": clean_model,
-                            "messages": [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt}
-                            ],
-                            "temperature": temperature,
-                            "max_tokens": 800
-                        }
-                        r_openai = await client.post(f"{clean_host}/v1/chat/completions", json=openai_payload)
-                        if r_openai.status_code == 200:
-                            return r_openai.json()["choices"][0]["message"]["content"].strip()
+                            data = r_ollama.json()
+                            raw_content = data.get("message", {}).get("content", "").strip()
+                            return strip_reasoning_tags(raw_content)
                     except Exception:
                         pass
 
@@ -202,38 +196,30 @@ class AIEngine:
         host = settings.get("ai_host", "")
 
         system_prompt = (
-            "You are an expert OSINT pseudonym, syllable analysis, and collision intelligence generator. "
-            "Analyze the target username, real name(s), location, and context clues. "
-            "Identify first and last names, syllable boundaries, cultural country suffixes (e.g. _il, _uk, _us, _de), "
-            "and human username collision fallbacks (e.g. appending single digits like 1, 2, 3, 7, 01 or separator swaps like . vs _ vs -). "
-            "For names like 'ozalmagor' + Israel, include variants like 'oz_almagor', 'oz.almagor', 'almagor_oz', 'ozalmagor_il', 'oz_almagor_il', 'o_almagor'. "
-            "For handles like 'account_loading', include 'account.loading', 'account.loading3', 'account_loading3', 'accountloading'. "
-            "Output ONLY a raw JSON array of 15 to 25 high-probability username permutations (lowercase, alphanumeric with dots/underscores/hyphens). "
-            "Do not include markdown fences or explanation. Output ONLY the JSON array."
+            "You are an OSINT handle generator. "
+            "Output ONLY a raw list of 15 username variations inside quotes, separated by commas. "
+            "Do NOT include explanations, reasoning, or markdown fences."
         )
 
         user_prompt = (
-            f"Seed Username: {seed_username}\n"
-            f"Known Names / Aliases: {real_names}\n"
-            f"Location / Country: {location}\n"
-            f"Context / Keywords: {keywords}\n\n"
-            "Generate intelligent handle variations. Example output format: [\"handle_one\", \"handle.two\", \"handle.two3\", \"handletwo_il\"]"
+            f"Username: {seed_username}\n"
+            f"Known Names: {real_names}\n"
+            f"Location: {location}\n\n"
+            "Generate handles with first/last names, country suffixes (_il, _us, _uk), and numbers (1, 2, 3)."
         )
 
         raw_resp = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.3)
         if not raw_resp:
             return []
 
-        try:
-            clean_json = raw_resp.strip()
-            if clean_json.startswith("```"):
-                clean_json = clean_json.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            items = json.loads(clean_json)
-            if isinstance(items, list):
-                return [str(x).strip().lower() for x in items if isinstance(x, str) and 2 <= len(str(x)) <= 32]
-        except Exception as e:
-            logger.warning(f"Failed to parse AI permutations JSON: {e} -> {raw_resp}")
-        return []
+        # Extract all handles using regex to never fail on formatting
+        extracted = re.findall(r'["\']?([a-zA-Z0-9._\-]{2,32})["\']?', raw_resp)
+        stop_words = {"username", "usernames", "json", "list", "output", "handles", "names", "here", "are"}
+        valid = [
+            x.lower().strip() for x in extracted 
+            if x.lower().strip() not in stop_words and len(x.strip()) >= 2
+        ]
+        return valid[:25]
 
     @classmethod
     async def generate_dossier_briefing(cls, settings: Dict[str, Any], target_name: str, findings: List[Dict[str, Any]], email_info: Optional[Dict[str, Any]] = None, phone_info: Optional[Dict[str, Any]] = None, location: str = "") -> Optional[str]:
@@ -246,20 +232,18 @@ class AIEngine:
             return None
 
         system_prompt = (
-            "You are an expert intelligence analyst for ArgosOSINT. "
-            "Write a concise, professional, 2 to 3 sentence executive intelligence briefing based on discovered accounts, "
-            "identities, platforms, and locations. Be objective, concise, and highlight verified identities. "
-            "Do not use markdown headers or bullet points. Output plain text only."
+            "You are an intelligence analyst for ArgosOSINT. "
+            "Write a concise, 2-sentence executive summary highlighting discovered accounts and identities. "
+            "Do NOT show reasoning, thoughts, or bullet points. Output clean plain text only."
         )
 
         platforms_summary = ", ".join([f"{f.get('site')} (@{f.get('username')})" for f in findings[:15]])
         user_prompt = (
             f"Target: {target_name}\n"
             f"Location: {location or 'Unknown'}\n"
-            f"Email Findings: {email_info.get('email') if email_info else 'None'}\n"
-            f"Phone Findings: {phone_info.get('e164') if phone_info else 'None'} ({phone_info.get('country') if phone_info else ''})\n"
             f"Discovered Profiles ({len(findings)} Total): {platforms_summary}\n\n"
-            "Provide the executive briefing."
+            "Provide the executive summary."
         )
 
-        return await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.2)
+        resp = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.2)
+        return strip_reasoning_tags(resp) if resp else None
