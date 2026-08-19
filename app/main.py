@@ -155,12 +155,34 @@ async def scan_stream_endpoint(
 
 @app.get("/api/settings")
 async def get_settings_endpoint():
-    return repo.get_all_settings()
+    raw_settings = repo.get_all_settings()
+    api_key = raw_settings.get("ai_api_key", "").strip()
+
+    masked_key = ""
+    if api_key:
+        if len(api_key) > 8:
+            masked_key = f"{api_key[:4]}...{api_key[-4:]}"
+        else:
+            masked_key = "••••••••"
+
+    return {
+        "ai_provider": raw_settings.get("ai_provider", "groq"),
+        "ai_model": raw_settings.get("ai_model", DEFAULT_GROQ_MODEL),
+        "ai_host": raw_settings.get("ai_host", DEFAULT_LOCAL_HOST),
+        "enable_ai": raw_settings.get("enable_ai", "true") != "false",
+        "has_api_key": bool(api_key),
+        "masked_api_key": masked_key
+    }
 
 @app.post("/api/settings")
 async def save_settings_endpoint(payload: dict):
     for k, v in payload.items():
-        repo.set_setting(k, str(v))
+        if k == "ai_api_key":
+            val_str = str(v).strip()
+            if val_str and val_str != "__PRESERVED__":
+                repo.set_setting(k, val_str)
+        else:
+            repo.set_setting(k, str(v))
     return {"status": "saved"}
 
 @app.get("/api/settings/health")

@@ -9,10 +9,10 @@ let activePlatformFilter = 'all';
 let isAIOnline = false;
 
 const FALLBACK_GROQ_MODELS = [
-  { id: 'openai/gpt-oss-20b', name: 'OpenAI GPT-OSS 20B (Primary - Ultra-Fast)' },
-  { id: 'openai/gpt-oss-120b', name: 'OpenAI GPT-OSS 120B (Secondary - Deep Reasoning)' },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile' }
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recommended - High Accuracy)' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-Fast)' },
+  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (High Context)' },
+  { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT' }
 ];
 
 const LOCAL_MODELS = [
@@ -245,7 +245,6 @@ async function checkAIHealth() {
   const statusPill = document.getElementById('ai-global-status');
   const statusText = document.getElementById('ai-status-text');
   const collisionBadge = document.getElementById('collision-mode-badge');
-  const offlineDigitContainer = document.getElementById('offline-digit-container');
   if (!statusPill || !statusText) return;
 
   try {
@@ -259,13 +258,11 @@ async function checkAIHealth() {
         collisionBadge.innerText = `AI REASONING & CONTEXT ENGINE: ACTIVE (${res.provider.toUpperCase()})`;
         collisionBadge.style.color = 'var(--status-found)';
       }
-      if (offlineDigitContainer) offlineDigitContainer.style.display = 'none';
     } else {
       if (collisionBadge) {
         collisionBadge.innerText = 'CONTEXT & SYLLABLE MATRIX: ACTIVE (LOCAL CORE)';
         collisionBadge.style.color = 'var(--status-searching)';
       }
-      if (offlineDigitContainer) offlineDigitContainer.style.display = 'block';
     }
   } catch (e) {
     statusText.innerText = 'AI: OFFLINE (SERVER UNREACHABLE)';
@@ -345,22 +342,25 @@ async function setupSettingsModal() {
   const testBtn = document.getElementById('btn-test-ai');
   const testStatus = document.getElementById('test-status-box');
 
+  const keyMaskedContainer = document.getElementById('key-masked-container');
+  const keyMaskedText = document.getElementById('key-masked-text');
+  const keyInputContainer = document.getElementById('key-input-container');
+  const btnReplaceKey = document.getElementById('btn-replace-key');
+
+  let hasStoredApiKey = false;
+  let isReplacingKey = false;
+
   const populateModels = async (provider, chosenModel) => {
     if (provider === 'groq') {
-      const apiKey = keyInput.value.trim();
       let modelsToUse = FALLBACK_GROQ_MODELS;
-
-      if (apiKey && apiKey.startsWith('gsk_')) {
-        try {
-          const res = await fetch(`/api/models/live?key=${encodeURIComponent(apiKey)}`).then(r => r.json());
-          if (res && res.models && res.models.length > 0) {
-            modelsToUse = res.models;
-          }
-        } catch (e) {}
-      }
+      try {
+        const res = await fetch('/api/models/live').then(r => r.json());
+        if (res && res.models && res.models.length > 0) {
+          modelsToUse = res.models;
+        }
+      } catch (e) {}
 
       modelSelect.innerHTML = modelsToUse.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-
       let target = chosenModel || modelsToUse[0].id;
       const matched = modelsToUse.find(m => m.id === target);
       modelSelect.value = matched ? target : modelsToUse[0].id;
@@ -375,6 +375,13 @@ async function setupSettingsModal() {
     if (providerSelect.value === 'groq') {
       groupKey.style.display = 'flex';
       groupHost.style.display = 'none';
+      if (hasStoredApiKey && !isReplacingKey) {
+        keyMaskedContainer.style.display = 'flex';
+        keyInputContainer.style.display = 'none';
+      } else {
+        keyMaskedContainer.style.display = 'none';
+        keyInputContainer.style.display = 'flex';
+      }
       populateModels('groq', modelSelect.value);
     } else {
       groupKey.style.display = 'none';
@@ -382,6 +389,16 @@ async function setupSettingsModal() {
       populateModels('local', modelSelect.value);
     }
   };
+
+  if (btnReplaceKey) {
+    btnReplaceKey.addEventListener('click', () => {
+      isReplacingKey = true;
+      keyMaskedContainer.style.display = 'none';
+      keyInputContainer.style.display = 'flex';
+      keyInput.value = '';
+      keyInput.focus();
+    });
+  }
 
   if (hostPresetSelect) {
     hostPresetSelect.addEventListener('change', () => {
@@ -391,12 +408,17 @@ async function setupSettingsModal() {
     });
   }
 
+  // Load Settings from Server
   try {
     const serverSettings = await fetch('/api/settings').then(r => r.json());
     if (serverSettings.ai_provider) providerSelect.value = serverSettings.ai_provider;
-    if (serverSettings.ai_api_key) keyInput.value = serverSettings.ai_api_key;
     if (serverSettings.ai_host) hostInput.value = serverSettings.ai_host;
     enableAiChk.checked = serverSettings.enable_ai !== false;
+
+    hasStoredApiKey = Boolean(serverSettings.has_api_key);
+    if (hasStoredApiKey && serverSettings.masked_api_key) {
+      keyMaskedText.innerText = `Stored Key: ${serverSettings.masked_api_key}`;
+    }
     await populateModels(providerSelect.value, serverSettings.ai_model);
   } catch (e) {}
 
@@ -406,9 +428,8 @@ async function setupSettingsModal() {
   openBtn.addEventListener('click', () => {
     modal.style.display = 'flex';
     testStatus.style.display = 'none';
-    if (providerSelect.value === 'groq') {
-      populateModels('groq', modelSelect.value);
-    }
+    isReplacingKey = false;
+    updateVisibility();
   });
 
   closeBtn.addEventListener('click', () => {
@@ -430,9 +451,11 @@ async function setupSettingsModal() {
     testStatus.style.color = 'var(--status-searching)';
     testStatus.innerText = 'Connecting to inference server...';
 
+    const apiKeyPayload = isReplacingKey ? keyInput.value.trim() : '__PRESERVED__';
+
     const payload = {
       ai_provider: providerSelect.value,
-      ai_api_key: keyInput.value.trim(),
+      ai_api_key: apiKeyPayload,
       ai_model: modelSelect.value,
       ai_host: hostInput.value.trim(),
       enable_ai: enableAiChk.checked
@@ -463,9 +486,11 @@ async function setupSettingsModal() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const apiKeyPayload = (isReplacingKey && keyInput.value.trim()) ? keyInput.value.trim() : '__PRESERVED__';
+
     const payload = {
       ai_provider: providerSelect.value,
-      ai_api_key: keyInput.value.trim(),
+      ai_api_key: apiKeyPayload,
       ai_model: modelSelect.value,
       ai_host: hostInput.value.trim(),
       enable_ai: enableAiChk.checked
@@ -674,7 +699,6 @@ function renderFindingsGrid() {
     return;
   }
 
-  // Count shared avatar hashes for correlation badge
   const hashMatches = {};
   currentFindings.forEach(f => {
     const h = f.metadata?.avatar_hash;
@@ -713,7 +737,6 @@ function addFindingCard(item, hashMatches = {}) {
     <div class="profile-avatar-fallback">${item.site.substring(0, 2).toUpperCase()}</div>
   `;
 
-  // Avatar match badge
   let avatarMatchBadge = '';
   if (meta.avatar_hash && hashMatches[meta.avatar_hash] && hashMatches[meta.avatar_hash].length > 1) {
     const others = hashMatches[meta.avatar_hash].filter(s => s !== item.site);
@@ -722,7 +745,6 @@ function addFindingCard(item, hashMatches = {}) {
     }
   }
 
-  // Follower / Metric Badges
   let metricsHtml = '';
   const metricItems = [];
   if (metrics.followers) metricItems.push(`<span>Followers: <strong>${metrics.followers}</strong></span>`);
@@ -742,7 +764,6 @@ function addFindingCard(item, hashMatches = {}) {
     <div class="profile-bio-box">${meta.bio}</div>
   ` : '';
 
-  // Outbound Links
   let outboundHtml = '';
   if (meta.outbound_links && meta.outbound_links.length > 0) {
     outboundHtml = `
@@ -755,7 +776,6 @@ function addFindingCard(item, hashMatches = {}) {
     `;
   }
 
-  // Handle Pivots
   let pivotsHtml = '';
   if (meta.mentioned_handles && meta.mentioned_handles.length > 0) {
     pivotsHtml = `
@@ -860,7 +880,7 @@ async function loadHistory() {
       <tr>
         <td><strong>${d.target_name}</strong></td>
         <td style="font-family:var(--font-mono);font-size:11px;">${d.seed_username || d.seed_email || d.seed_phone}</td>
-        <td><span class="corrob-badge">${d.ai_confidence}%</span></td>
+        <td><span class="corrob-badge">${d.confidence}%</span></td>
         <td>${d.findings_count} Profiles</td>
         <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${d.created_at}</td>
       </tr>

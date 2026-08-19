@@ -1,245 +1,130 @@
-import asyncio
+import os
 import json
-import logging
 import re
-import html
 import httpx
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
+from app.config import REQUEST_TIMEOUT, HTTP_VERIFY
+from app.database import repository as repo
 
-logger = logging.getLogger(__name__)
-
-GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
-DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
-DEFAULT_LOCAL_HOST = "http://127.0.0.1:11434"
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_LOCAL_MODEL = "llama3.2"
+DEFAULT_LOCAL_HOST = "http://127.0.0.1:11434"
 
-LOCAL_PROBE_PORTS = [
-    "http://127.0.0.1:11434",
-    "http://localhost:11434",
-    "http://127.0.0.1:1234",
-    "http://localhost:1234",
-    "http://127.0.0.1:8080",
-    "http://localhost:8080"
+GROQ_FALLBACK_MODELS = [
+    {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B Versatile (Recommended - High Accuracy)"},
+    {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B Instant (Ultra-Fast)"},
+    {"id": "mixtral-8x7b-32768", "name": "Mixtral 8x7B (High Context)"},
+    {"id": "gemma2-9b-it", "name": "Gemma 2 9B IT"}
 ]
 
-def strip_reasoning_tags(text: str) -> str:
-    if not text:
-        return ""
-    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    cleaned = re.sub(r'\[reasoning\].*?\[/reasoning\]', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    cleaned = re.sub(r'```json\s*', '', cleaned)
-    cleaned = re.sub(r'```\s*', '', cleaned)
-    return cleaned.strip()
+LOCAL_FALLBACK_MODELS = [
+    {"id": "llama3.2", "name": "Llama 3.2 (Primary)"},
+    {"id": "llama3.1", "name": "Llama 3.1 (Secondary)"},
+    {"id": "mistral", "name": "Mistral 7B (Fallback)"}
+]
+
+SYSTEM_PROMPT = """You are an expert OSINT analyst. Produce concise, objective executive briefings and precise machine-readable metadata. Never reveal internal chain-of-thought. Follow format rules exactly.
+
+Instructions:
+Output exactly two items: (A) a plain-text executive briefing of 2–3 sentences (no markdown, no bullets), and (B) a JSON object on a separate line (no code fences) matching the schema below. Do NOT include any explanatory text beyond these two items.
+The briefing must be objective, concise, and highlight verified identities.
+
+JSON schema:
+{"briefing":string,"confidence":int (0-100),"verified_identities":string[],"inferred_identity":string,"evidence":[{"site":string,"username":string,"url":string}],"rationale":string}
+"""
+
+def resolve_api_key(key: str) -> str:
+    if key and key != "__PRESERVED__":
+        return key.strip()
+    stored = repo.get_setting("ai_api_key", "")
+    return stored.strip()
 
 class AIEngine:
     @staticmethod
-    async def fetch_live_groq_models(api_key: str) -> List[Dict[str, str]]:
-        clean_key = (api_key or "").strip().strip('"').strip("'")
-        if not clean_key:
-            return []
-        try:
-            headers = {"Authorization": f"Bearer {clean_key}"}
-            async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
-                resp = await client.get(GROQ_MODELS_URL, headers=headers)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    models_data = data.get("data", [])
-                    chat_models = []
-                    for m in models_data:
-                        mid = m.get("id", "")
-                        if any(x in mid.lower() for x in ["whisper", "guard", "embed", "vision"]):
-                            continue
-                        chat_models.append({"id": mid, "name": mid})
-
-                    def sort_priority(item):
-                        mid = item["id"]
-                        if "gpt-oss-20b" in mid: return 0
-                        if "llama-3.1-8b-instant" in mid: return 1
-                        if "gpt-oss-120b" in mid: return 2
-                        if "llama-3.3-70b-versatile" in mid: return 3
-                        if "compound-mini" in mid: return 4
-                        if "allam" in mid: return 5
-                        if "qwen" in mid: return 6
-                        return 10
-
-                    chat_models.sort(key=sort_priority)
-                    return chat_models
-        except Exception:
-            pass
-        return []
-
-    @staticmethod
-    async def get_available_models(provider: str = "groq", api_key: str = "", host: str = "") -> List[Dict[str, str]]:
-        if provider == "groq":
-            live = await AIEngine.fetch_live_groq_models(api_key)
-            if live:
-                return live
-            return [
-                {"id": "openai/gpt-oss-20b", "name": "OpenAI GPT-OSS 20B (Primary - Ultra-Fast)"},
-                {"id": "openai/gpt-oss-120b", "name": "OpenAI GPT-OSS 120B (Deep Reasoning)"},
-                {"id": "qwen/qwen3.6-27b", "name": "Qwen 3.6 27B"},
-                {"id": "groq/compound-mini", "name": "Groq Compound Mini"}
-            ]
-        return [
-            {"id": "llama3.2:latest", "name": "Llama 3.2 (Local Ollama)"},
-            {"id": "llama3.1:latest", "name": "Llama 3.1 (Local Ollama)"},
-            {"id": "mistral:latest", "name": "Mistral 7B (Local Ollama)"},
-            {"id": "deepseek-r1:latest", "name": "DeepSeek R1 (Local Ollama)"},
-            {"id": "local-model", "name": "Loaded Model (LM Studio / llama.cpp)"}
-        ]
-
-    @staticmethod
-    async def test_connection(provider: str, api_key: str = "", model: str = "", host: str = "") -> Dict[str, Any]:
-        try:
-            if provider == "groq":
-                clean_key = (api_key or "").strip().strip('"').strip("'")
-                if not clean_key:
-                    return {"success": False, "status": "no_key", "error": "Groq API Key is required"}
-
-                clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
-                headers = {
-                    "Authorization": f"Bearer {clean_key}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": clean_model,
-                    "messages": [{"role": "user", "content": "Respond with OK"}],
-                    "max_tokens": 10
-                }
-
-                async with httpx.AsyncClient(timeout=8.0, verify=False) as client:
-                    resp = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
-                    if resp.status_code == 200:
-                        return {"success": True, "status": "online", "message": f"Groq Engine Online ({clean_model})"}
-                    
-                    try:
-                        err_json = resp.json()
-                        err_msg = err_json.get("error", {}).get("message", resp.text)
-                    except Exception:
-                        err_msg = resp.text
-                    return {"success": False, "status": "error", "error": f"Groq ({resp.status_code}): {err_msg}"}
-
-            elif provider in ["ollama", "local"]:
-                clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
-                clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
-
-                hosts_to_try = [clean_host] + [h for h in LOCAL_PROBE_PORTS if h != clean_host]
-
-                async with httpx.AsyncClient(timeout=3.0, verify=False) as client:
-                    for h in hosts_to_try:
-                        # 1. Test Ollama /api/tags
-                        try:
-                            r_ollama = await client.get(f"{h}/api/tags", timeout=2.0)
-                            if r_ollama.status_code == 200:
-                                return {
-                                    "success": True, 
-                                    "status": "online", 
-                                    "discovered_host": h,
-                                    "message": f"Local Ollama Online at {h} ({clean_model})"
-                                }
-                        except Exception:
-                            pass
-
-                        # 2. Test OpenAI-compatible /v1/models (LM Studio, llama.cpp)
-                        try:
-                            r_openai = await client.get(f"{h}/v1/models", timeout=2.0)
-                            if r_openai.status_code in [200, 401]:
-                                return {
-                                    "success": True, 
-                                    "status": "online", 
-                                    "discovered_host": h,
-                                    "message": f"Local AI Server Online at {h} ({clean_model})"
-                                }
-                        except Exception:
-                            pass
-
-                    return {
-                        "success": False, 
-                        "status": "offline", 
-                        "error": f"Local server at {clean_host} unreachable. Ensure Ollama (port 11434) or LM Studio (port 1234) is running, or use Groq Cloud API."
-                    }
-
-            return {"success": False, "status": "error", "error": f"Unknown provider: {provider}"}
-        except Exception as e:
-            return {"success": False, "status": "offline", "error": str(e)}
-
-    @staticmethod
-    async def query_llm(provider: str, api_key: str, model: str, host: str, system_prompt: str, user_prompt: str, temperature: float = 0.1) -> Optional[str]:
-        try:
-            if provider == "groq":
-                clean_key = (api_key or "").strip().strip('"').strip("'")
-                if not clean_key:
-                    return None
-
-                clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
-                headers = {
-                    "Authorization": f"Bearer {clean_key}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": clean_model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    "temperature": temperature,
-                    "max_tokens": 1000
-                }
-                async with httpx.AsyncClient(timeout=14.0, verify=False) as client:
-                    resp = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
+    async def get_available_models(provider: str = "groq", api_key: str = "") -> List[Dict[str, str]]:
+        actual_key = resolve_api_key(api_key)
+        if provider == "groq" and actual_key:
+            try:
+                async with httpx.AsyncClient(timeout=5.0, verify=HTTP_VERIFY) as client:
+                    resp = await client.get(
+                        "https://api.groq.com/openai/v1/models",
+                        headers={"Authorization": f"Bearer {actual_key}"}
+                    )
                     if resp.status_code == 200:
                         data = resp.json()
-                        raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        return strip_reasoning_tags(raw_content)
+                        models = []
+                        for m in data.get("data", []):
+                            mid = m.get("id", "")
+                            if any(k in mid.lower() for k in ["llama", "mixtral", "gemma", "whisper"]):
+                                models.append({"id": mid, "name": mid})
+                        if models:
+                            return sorted(models, key=lambda x: ("llama-3.3" not in x["id"], x["id"]))
+            except Exception:
+                pass
+            return GROQ_FALLBACK_MODELS
+        elif provider == "local":
+            return LOCAL_FALLBACK_MODELS
+        return GROQ_FALLBACK_MODELS
 
-            elif provider in ["ollama", "local"]:
-                clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
-                clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
+    @staticmethod
+    async def test_connection(provider: str, api_key: str = "", model: str = "", host: str = DEFAULT_LOCAL_HOST) -> Dict[str, Any]:
+        actual_key = resolve_api_key(api_key)
+        if provider == "groq":
+            if not actual_key:
+                return {"success": False, "error": "Groq API key required"}
+            model_to_test = model or DEFAULT_GROQ_MODEL
+            try:
+                async with httpx.AsyncClient(timeout=6.0, verify=HTTP_VERIFY) as client:
+                    payload = {
+                        "model": model_to_test,
+                        "messages": [{"role": "user", "content": "ping"}],
+                        "max_tokens": 5,
+                        "temperature": 0.1
+                    }
+                    resp = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {actual_key}", "Content-Type": "application/json"},
+                        json=payload
+                    )
+                    if resp.status_code == 200:
+                        return {"success": True, "message": f"Groq Cloud connection verified ({model_to_test})"}
+                    else:
+                        err_text = resp.text[:120]
+                        return {"success": False, "error": f"Groq returned HTTP {resp.status_code}: {err_text}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
-                async with httpx.AsyncClient(timeout=16.0, verify=False) as client:
-                    # Try /v1/chat/completions (LM Studio, modern Ollama)
+        elif provider == "local":
+            target_model = model or DEFAULT_LOCAL_MODEL
+            discovered_host = None
+            candidate_hosts = [host, "http://127.0.0.1:11434", "http://127.0.0.1:1234", "http://127.0.0.1:8080"]
+            candidate_hosts = list(dict.fromkeys(candidate_hosts))
+
+            async with httpx.AsyncClient(timeout=4.0, verify=HTTP_VERIFY) as client:
+                for h in candidate_hosts:
                     try:
-                        payload = {
-                            "model": clean_model,
-                            "messages": [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt}
-                            ],
-                            "temperature": temperature
-                        }
-                        resp = await client.post(f"{clean_host}/v1/chat/completions", json=payload, timeout=14.0)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                            return strip_reasoning_tags(raw_content)
+                        r = await client.get(f"{h.rstrip('/')}/api/tags")
+                        if r.status_code == 200:
+                            discovered_host = h.rstrip('/')
+                            return {"success": True, "message": f"Local Ollama online at {discovered_host} ({target_model})", "discovered_host": discovered_host}
                     except Exception:
                         pass
 
-                    # Try Ollama native /api/generate
                     try:
-                        payload = {
-                            "model": clean_model,
-                            "system": system_prompt,
-                            "prompt": user_prompt,
-                            "stream": False,
-                            "options": {"temperature": temperature}
-                        }
-                        resp = await client.post(f"{clean_host}/api/generate", json=payload, timeout=14.0)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            raw_content = data.get("response", "")
-                            return strip_reasoning_tags(raw_content)
+                        r = await client.get(f"{h.rstrip('/')}/v1/models")
+                        if r.status_code == 200:
+                            discovered_host = h.rstrip('/')
+                            return {"success": True, "message": f"Local LM Studio / llama.cpp online at {discovered_host} ({target_model})", "discovered_host": discovered_host}
                     except Exception:
                         pass
 
-        except Exception as e:
-            logger.warning(f"Error querying LLM: {e}")
-        return None
+            return {"success": False, "error": "No local inference server reachable (Ollama: 11434, LM Studio: 1234)"}
+
+        return {"success": False, "error": "Unknown provider"}
 
     @staticmethod
     async def generate_dossier_briefing(
-        settings: Dict[str, Any],
+        settings: Dict[str, str],
         target_name: str,
         findings: List[Dict[str, Any]],
         email_info: Optional[Dict[str, Any]] = None,
@@ -247,115 +132,116 @@ class AIEngine:
         location: str = ""
     ) -> Dict[str, Any]:
         enabled = settings.get("enable_ai", "true") != "false"
+        if not enabled:
+            return AIEngine._deterministic_fallback(target_name, findings, email_info, phone_info, location)
+
         provider = settings.get("ai_provider", "groq")
-        api_key = settings.get("ai_api_key", "")
+        api_key = resolve_api_key(settings.get("ai_api_key", ""))
         model = settings.get("ai_model", DEFAULT_GROQ_MODEL)
         host = settings.get("ai_host", DEFAULT_LOCAL_HOST)
 
-        system_prompt = (
-            "You are an expert OSINT analyst. Produce concise, objective executive briefings and precise machine-readable metadata. "
-            "Never reveal internal chain-of-thought. Follow format rules exactly.\n\n"
-            "Instructions:\n"
-            "Output exactly two items: (A) a plain-text executive briefing of 2–3 sentences (no markdown, no bullets), and "
-            "(B) a JSON object on a separate line (no code fences) matching the schema below. Do NOT include any explanatory text beyond these two items.\n"
-            "The briefing must be objective, concise, and highlight any verified_identities. If none are verified, state the inferred identity and label it inferred.\n"
-            'JSON schema: {"briefing":string,"confidence":int (0-100),"verified_identities":[string],"inferred_identity":string,"evidence":[{"site":string,"username":string,"url":string}],"rationale":string}'
-        )
+        user_content = f"""Target: {target_name}
+Location: {location or 'Unknown'}
+Discovered profiles (list): {json.dumps([{'site': f['site'], 'username': f['username'], 'profile_url': f['profile_url']} for f in findings])}
+Email findings: {json.dumps(email_info) if email_info else 'None'}
+Phone findings: {json.dumps(phone_info) if phone_info else 'None'}
+"""
 
-        discovered_list = []
-        for f in findings[:25]:
-            discovered_list.append({
-                "site": f.get("site", "Unknown"),
-                "username": f.get("username", ""),
-                "profile_url": f.get("profile_url", "")
-            })
-
-        user_prompt = (
-            f"Target: {target_name}\n"
-            f"Location: {location or 'Unknown'}\n"
-            f"Discovered profiles (list): {json.dumps(discovered_list)}\n"
-            f"Email findings: {json.dumps(email_info) if email_info else 'None'}\n"
-            f"Phone findings: {json.dumps(phone_info) if phone_info else 'None'}"
-        )
-
-        if enabled:
-            raw_response = await AIEngine.query_llm(
-                provider=provider,
-                api_key=api_key,
-                model=model,
-                host=host,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt
-            )
-
-            if raw_response:
-                parsed = AIEngine.parse_structured_briefing(raw_response)
-                if parsed:
-                    return parsed
-
-        # Deterministic Heuristic Fallback
-        return AIEngine.generate_heuristic_briefing(target_name, findings, email_info, phone_info, location)
-
-    @staticmethod
-    def parse_structured_briefing(raw_text: str) -> Optional[Dict[str, Any]]:
-        cleaned = strip_reasoning_tags(raw_text)
-        json_match = re.search(r'\{.*"briefing".*\}', cleaned, re.DOTALL)
-        if not json_match:
-            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-
-        if json_match:
+        if provider == "groq" and api_key:
             try:
-                data = json.loads(json_match.group(0))
-                if isinstance(data, dict) and "briefing" in data:
-                    return {
-                        "briefing": data.get("briefing", ""),
-                        "confidence": int(data.get("confidence", 70)),
-                        "verified_identities": data.get("verified_identities", []),
-                        "inferred_identity": data.get("inferred_identity", ""),
-                        "evidence": data.get("evidence", []),
-                        "rationale": data.get("rationale", "")
+                async with httpx.AsyncClient(timeout=10.0, verify=HTTP_VERIFY) as client:
+                    payload = {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": user_content}
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 600
                     }
+                    resp = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                        json=payload
+                    )
+                    if resp.status_code == 200:
+                        raw_text = resp.json()["choices"][0]["message"]["content"]
+                        parsed = AIEngine._parse_ai_output(raw_text)
+                        if parsed:
+                            return parsed
             except Exception:
                 pass
 
-        lines = [l.strip() for l in cleaned.split('\n') if l.strip()]
-        if lines:
+        elif provider == "local":
+            try:
+                async with httpx.AsyncClient(timeout=12.0, verify=HTTP_VERIFY) as client:
+                    payload = {
+                        "model": model or DEFAULT_LOCAL_MODEL,
+                        "prompt": f"{SYSTEM_PROMPT}\n\n{user_content}",
+                        "stream": False,
+                        "options": {"temperature": 0.1}
+                    }
+                    resp = await client.post(f"{host.rstrip('/')}/api/generate", json=payload)
+                    if resp.status_code == 200:
+                        raw_text = resp.json().get("response", "")
+                        parsed = AIEngine._parse_ai_output(raw_text)
+                        if parsed:
+                            return parsed
+            except Exception:
+                pass
+
+        return AIEngine._deterministic_fallback(target_name, findings, email_info, phone_info, location)
+
+    @staticmethod
+    def _parse_ai_output(raw_text: str) -> Optional[Dict[str, Any]]:
+        clean_text = raw_text.strip()
+        lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
+
+        json_match = re.search(r'(\{[\s\S]*\})', clean_text)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(1))
+                if isinstance(data, dict) and "briefing" in data:
+                    return data
+            except Exception:
+                pass
+
+        briefing_lines = []
+        for line in lines:
+            if not line.startswith('{') and not line.startswith('```') and not line.startswith('JSON'):
+                briefing_lines.append(line)
+
+        briefing_text = " ".join(briefing_lines) if briefing_lines else clean_text
+        if len(briefing_text) > 20:
             return {
-                "briefing": lines[0],
+                "briefing": briefing_text,
                 "confidence": 75,
                 "verified_identities": [],
-                "inferred_identity": "",
+                "inferred_identity": "Inferred target profile",
                 "evidence": [],
-                "rationale": "Parsed from analyst intelligence briefing output."
+                "rationale": "Automated reasoning synthesis."
             }
         return None
 
     @staticmethod
-    def generate_heuristic_briefing(
-        target_name: str,
-        findings: List[Dict[str, Any]],
-        email_info: Optional[Dict[str, Any]],
-        phone_info: Optional[Dict[str, Any]],
-        location: str
-    ) -> Dict[str, Any]:
-        count = len(findings)
-        verified_handles = list(set([f["username"] for f in findings if f.get("is_seed")]))
-        sites_list = [f["site"] for f in findings[:6]]
-        sites_str = ", ".join(sites_list) if sites_list else "multiple networks"
+    def _deterministic_fallback(target_name, findings, email_info, phone_info, location):
+        exact_seeds = [f for f in findings if f.get("is_seed")]
+        total = len(findings)
+        conf = 90 if exact_seeds else (60 if total > 0 else 30)
 
-        briefing = f"Target intelligence inquiry for '{target_name}' revealed {count} correlated online accounts across {sites_str}."
+        verified = [f"{f['site']} (@{f['username']})" for f in exact_seeds[:3]]
+        briefing = f"Target intelligence synthesis for '{target_name}'. Identified {total} public profiles across correlated networks. "
+        if verified:
+            briefing += f"Verified exact matches on {', '.join(verified)}. "
         if location:
-            briefing += f" Regional correlation matches location context for '{location}'."
-        if email_info and email_info.get("deliverable"):
-            briefing += f" Direct mailbox linkage confirmed for {email_info.get('email')}."
-
-        evidence = [{"site": f["site"], "username": f["username"], "url": f["profile_url"]} for f in findings[:6]]
+            briefing += f"Regional footprint aligned with {location}. "
+        briefing += "Corroboration corroborates active online presence."
 
         return {
             "briefing": briefing,
-            "confidence": min(95, max(45, count * 8)),
-            "verified_identities": verified_handles,
+            "confidence": conf,
+            "verified_identities": [f['username'] for f in exact_seeds[:2]],
             "inferred_identity": target_name,
-            "evidence": evidence,
-            "rationale": f"Correlated {count} digital profile artifacts across target search matrix."
+            "evidence": [{'site': f['site'], 'username': f['username'], 'url': f['profile_url']} for f in exact_seeds[:4]],
+            "rationale": f"Corroborated {len(exact_seeds)} seed profiles and {total - len(exact_seeds)} permutation matches."
         }

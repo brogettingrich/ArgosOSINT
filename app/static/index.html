@@ -2,251 +2,269 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#080a0f">
-  <title>ArgosOSINT | Multi-Target Reconnaissance</title>
-  <link rel="manifest" href="/manifest.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArgosOSINT - High-Precision Intelligence Engine</title>
   <link rel="stylesheet" href="/static/css/main.css">
   <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Header -->
   <header class="app-header">
     <div class="brand-wrapper">
       <div class="brand-logo"></div>
-      <div class="brand-title">ARGOS<span style="color:var(--text-secondary);font-weight:400;">OSINT</span></div>
-      <span class="brand-badge">PROBE ENGINE</span>
+      <div class="brand-title">ARGOS // OSINT</div>
+      <div class="brand-badge">CORE V3.2</div>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <!-- Real-Time AI Status Badge -->
+
+    <nav class="nav-tabs">
+      <button class="nav-tab-btn active" data-target="view-recon">Target Recon</button>
+      <button class="nav-tab-btn" data-target="view-graph">Relationship Graph</button>
+      <button class="nav-tab-btn" data-target="view-history">Intelligence Dossiers</button>
+    </nav>
+
+    <div style="display:flex;align-items:center;gap:12px;">
       <div id="ai-global-status" class="ai-status-pill offline" title="Click to configure AI Engine">
         <span class="status-dot"></span>
-        <span id="ai-status-text">AI: CHECKING...</span>
+        <span id="ai-status-text">AI ENGINE: CHECKING...</span>
       </div>
-      <nav class="nav-tabs">
-        <button class="nav-tab-btn active" data-target="view-scanner">Scanner</button>
-        <button class="nav-tab-btn" data-target="view-graph">Relationship Graph</button>
-        <button class="nav-tab-btn" data-target="view-history">Dossiers</button>
-      </nav>
-      <button id="btn-open-settings" class="btn-settings-gear" title="Configure AI & API Keys">Settings</button>
+      <button id="btn-open-settings" class="btn-settings-gear" title="Engine Settings">Settings</button>
     </div>
   </header>
 
+  <!-- Main Container -->
   <main class="main-container">
-    <!-- VIEW: SCANNER -->
-    <section id="view-scanner" class="view-section">
+    <!-- 1. TARGET RECON VIEW -->
+    <section id="view-recon" class="view-section active">
+      <!-- Search Card -->
       <div class="search-card">
         <div class="card-header-row">
-          <div class="card-title">Target Intelligence Parameters</div>
-          <div id="collision-mode-badge" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">AI COLLISION DETECTION: STANDBY</div>
+          <span class="card-title">Target Intelligence Parameters</span>
+          <span id="collision-mode-badge" class="brand-badge" style="color:var(--status-found);">AI REASONING & CONTEXT ENGINE: ACTIVE</span>
         </div>
 
         <form id="scan-form">
           <div class="grid-inputs">
             <div class="input-group">
-              <label class="input-label">Username / Handle</label>
-              <input type="text" id="input-username" class="form-input" placeholder="e.g. jdoe">
+              <label class="input-label" for="input-username">Username / Handle</label>
+              <input type="text" id="input-username" class="form-input" placeholder="e.g. oz_almagor" autocomplete="off">
             </div>
+
             <div class="input-group">
-              <label class="input-label">Known Names / Aliases</label>
-              <input type="text" id="input-name" class="form-input" placeholder="e.g. John Doe">
+              <label class="input-label" for="input-name">Known Names / Aliases</label>
+              <input type="text" id="input-name" class="form-input" placeholder="e.g. Oz Almagor" autocomplete="off">
             </div>
+
             <div class="input-group">
-              <label class="input-label">Location / Country (Optional)</label>
-              <input type="text" id="input-location" class="form-input" placeholder="e.g. New Zealand">
+              <label class="input-label" for="input-location">Location / Country (Optional)</label>
+              <input type="text" id="input-location" class="form-input" placeholder="e.g. Israel, United States" autocomplete="off">
             </div>
+
             <div class="input-group">
-              <label class="input-label">Phone Number (Optional)</label>
-              <input type="text" id="input-phone" class="form-input" placeholder="+1234567890">
+              <label class="input-label" for="input-phone">Phone Number (Optional)</label>
+              <input type="text" id="input-phone" class="form-input" placeholder="+1234567890" autocomplete="off">
             </div>
+
             <div class="input-group">
-              <label class="input-label">Email Address (Optional)</label>
-              <input type="email" id="input-email" class="form-input" placeholder="target@domain.com">
+              <label class="input-label" for="input-email">Email Address (Optional)</label>
+              <input type="email" id="input-email" class="form-input" placeholder="target@domain.com" autocomplete="off">
             </div>
           </div>
 
-          <div class="permutation-bar" id="permutation-preview-bar"></div>
+          <!-- Permutation Preview -->
+          <div id="permutation-preview-bar" class="permutation-bar"></div>
 
+          <!-- Options & Submit -->
           <div class="options-row">
-            <div style="display:flex;flex-direction:column;gap:8px;">
-              <label class="checkbox-label">
-                <input type="checkbox" id="chk-fuzzy" checked>
-                <span>Enable Permutation Generation (Syllables, country suffix, separators)</span>
-              </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-fuzzy" checked>
+              <span>Enable Permutation Generation (Syllables, country suffix, separators)</span>
+            </label>
 
-              <div id="offline-digit-container" style="display:none;margin-left:22px;">
-                <label class="checkbox-label" style="color:var(--status-warn);">
-                  <input type="checkbox" id="chk-digits" checked>
-                  <span>Enable Systematic Digit Collisions (handle1, handle2, handle99)</span>
-                </label>
-              </div>
-            </div>
-
-            <button type="submit" class="btn-launch-scan">
-              <span>Launch Recon Probe</span>
+            <button type="submit" id="btn-start-scan" class="btn-launch-scan">
+              Launch Recon Probe
             </button>
           </div>
         </form>
       </div>
 
-      <!-- Live Telemetry & Progress -->
-      <div class="progress-panel" id="progress-panel">
+      <!-- Scan Progress -->
+      <div id="progress-panel" class="progress-panel">
         <div class="progress-header">
-          <span id="progress-detail">Initializing probe stream...</span>
+          <span id="progress-detail">Initializing target matrix...</span>
           <div style="display:flex;align-items:center;gap:12px;">
-            <span id="progress-percent">0%</span>
-            <button id="btn-dismiss-scan" class="btn-dismiss-link" title="Dismiss Session">Dismiss</button>
+            <span id="progress-percent" style="font-weight:600;color:var(--text-primary);">0%</span>
+            <button type="button" id="btn-dismiss-scan" class="btn-dismiss-link">Dismiss</button>
           </div>
         </div>
         <div class="progress-bar-bg">
-          <div class="progress-bar-fill" id="progress-bar-fill"></div>
+          <div id="progress-bar-fill" class="progress-bar-fill"></div>
         </div>
       </div>
 
-      <!-- AI Executive Intelligence Briefing Card -->
+      <!-- AI Briefing Card -->
       <div id="ai-briefing-card" class="briefing-card" style="display:none;">
-        <div class="briefing-header">
+        <div class="card-header-row">
           <div style="display:flex;align-items:center;gap:10px;">
-            <span>AI EXECUTIVE INTELLIGENCE BRIEFING</span>
-            <span id="briefing-confidence-badge" class="corrob-badge exact">90% CONFIDENCE</span>
+            <span class="card-title">Executive OSINT Briefing</span>
+            <span id="briefing-confidence-badge" class="corrob-badge">95% CONFIDENCE</span>
           </div>
-          <span id="briefing-identity-tag" class="category-tag">INFERRED IDENTITY</span>
+          <span id="briefing-identity-tag" class="brand-badge" style="color:var(--status-found);">IDENTITY: INFERRED</span>
         </div>
-        <p id="briefing-text" class="briefing-body"></p>
-        <div id="briefing-rationale" style="font-size:11px;color:var(--text-secondary);margin-top:6px;font-style:italic;"></div>
-        <div id="briefing-evidence-row" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+        <div id="briefing-text" style="font-size:13px;line-height:1.6;color:var(--text-primary);margin-bottom:12px;"></div>
+        <div id="briefing-rationale" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:10px;"></div>
+        <div id="briefing-evidence-row" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       </div>
 
-      <!-- Results Header & Actions -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;">
-        <h3 id="findings-count" style="font-size:15px;font-weight:600;">Discovered Accounts</h3>
-        <div style="display:flex;gap:8px;">
-          <button id="btn-reset-results" class="btn-profile-link" style="padding:4px 10px;font-size:11px;display:none;">Reset Grid</button>
-          <button id="btn-export-json" class="btn-profile-link" style="padding:4px 10px;font-size:11px;">Export JSON</button>
-          <button id="btn-export-html" class="btn-profile-link" style="padding:4px 10px;font-size:11px;">Export HTML</button>
+      <!-- Category Filter Bar -->
+      <div class="card-header-row" style="margin-top:10px;margin-bottom:0;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span id="findings-count" class="card-title">0 Discovered</span>
+          <button type="button" id="btn-reset-results" class="btn-dismiss-link" style="display:none;">Reset Grid</button>
+        </div>
+
+        <div id="filter-row" style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="filter-chip active" data-filter="all">All Entities</button>
+          <button class="filter-chip" data-filter="exact">Exact Matches</button>
+          <button class="filter-chip" data-filter="Social">Social</button>
+          <button class="filter-chip" data-filter="Developer">Developer</button>
+          <button class="filter-chip" data-filter="Gaming">Gaming</button>
+          <button class="filter-chip" data-filter="Media">Media</button>
+          <button class="filter-chip" data-filter="permutation">Permutations</button>
         </div>
       </div>
 
-      <!-- Category Filter Tabs -->
-      <div class="filter-row" id="filter-row" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="filter-chip active" data-filter="all">All</button>
-        <button class="filter-chip" data-filter="exact">Exact Matches</button>
-        <button class="filter-chip" data-filter="permutation">Permutations</button>
-        <button class="filter-chip" data-filter="Social">Social</button>
-        <button class="filter-chip" data-filter="Developer">Developer</button>
-        <button class="filter-chip" data-filter="Gaming">Gaming</button>
-        <button class="filter-chip" data-filter="Media">Media</button>
-      </div>
+      <!-- Dynamic Sub-Platform Filter Bar -->
+      <div id="sub-filter-row" class="sub-filter-row" style="display:none;"></div>
 
-      <!-- Sub-Platform Filter Bar -->
-      <div class="sub-filter-row" id="sub-filter-row" style="display:none;"></div>
-
-      <div class="results-grid" id="results-grid"></div>
+      <!-- Findings Grid -->
+      <div id="results-grid" class="results-grid"></div>
     </section>
 
-    <!-- VIEW: RELATIONSHIP GRAPH (Full-Window Interactive Canvas) -->
-    <section id="view-graph" class="view-section" style="display: none; height: calc(100vh - 100px);">
+    <!-- 2. FULL-WINDOW RELATIONSHIP GRAPH VIEW -->
+    <section id="view-graph" class="view-section" style="display:none;height:calc(100vh - 100px);flex-direction:column;">
       <div class="graph-toolbar">
         <div class="graph-filter-chips" id="graph-category-filters">
           <button class="filter-chip active" data-graph-cat="all">All Entities</button>
+          <button class="filter-chip" data-graph-cat="exact">Exact Matches</button>
           <button class="filter-chip" data-graph-cat="Social">Social</button>
           <button class="filter-chip" data-graph-cat="Developer">Developer</button>
           <button class="filter-chip" data-graph-cat="Gaming">Gaming</button>
           <button class="filter-chip" data-graph-cat="Media">Media</button>
-          <button class="filter-chip" data-graph-cat="exact">Exact Matches</button>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <input type="text" id="graph-search-input" class="form-input" placeholder="Search node in graph..." style="padding: 5px 12px; font-size: 11px; width: 190px;">
-          <button id="btn-graph-zoom-in" class="btn-graph-action" title="Zoom In">+</button>
-          <button id="btn-graph-zoom-out" class="btn-graph-action" title="Zoom Out">-</button>
-          <button id="btn-graph-recenter" class="btn-graph-action" title="Reset View / Center">Center</button>
-          <button id="btn-graph-freeze" class="btn-graph-action" title="Freeze / Unfreeze Layout">Freeze</button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="text" id="graph-search-input" class="form-input" placeholder="Search node / handle..." style="padding:4px 10px;font-size:11px;width:180px;">
+          <button id="btn-graph-zoom-in" class="btn-graph-action" title="Zoom In">[+]</button>
+          <button id="btn-graph-zoom-out" class="btn-graph-action" title="Zoom Out">[-]</button>
+          <button id="btn-graph-recenter" class="btn-graph-action" title="Recenter View">Center</button>
+          <button id="btn-graph-freeze" class="btn-graph-action" title="Toggle Physics">Freeze Physics</button>
         </div>
       </div>
 
-      <!-- Graph Sub-Platform Filter Bar -->
-      <div class="sub-filter-row" id="graph-platform-sub-filters" style="display: none; margin-top: 4px; margin-bottom: 6px;"></div>
+      <div id="graph-platform-sub-filters" class="sub-filter-row" style="display:none;margin-top:6px;margin-bottom:6px;"></div>
 
       <div class="graph-container">
         <canvas id="graphCanvas"></canvas>
       </div>
     </section>
 
-    <!-- VIEW: HISTORY -->
-    <section id="view-history" class="view-section" style="display: none;">
-      <div class="card-header-row">
-        <div class="card-title">Recorded Target Dossiers</div>
+    <!-- 3. DOSSIER HISTORY VIEW -->
+    <section id="view-history" class="view-section" style="display:none;">
+      <div class="search-card">
+        <div class="card-header-row">
+          <span class="card-title">Stored Intelligence Dossiers</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border-color);text-align:left;color:var(--text-muted);font-family:var(--font-mono);font-size:10px;">
+              <th style="padding:10px;">TARGET</th>
+              <th style="padding:10px;">SEED IDENTIFIER</th>
+              <th style="padding:10px;">AI CONFIDENCE</th>
+              <th style="padding:10px;">FINDINGS</th>
+              <th style="padding:10px;">TIMESTAMP</th>
+            </tr>
+          </thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
       </div>
-      <table class="history-table">
-        <thead>
-          <tr><th>Target</th><th>Seed Parameter</th><th>Confidence</th><th>Findings</th><th>Timestamp</th></tr>
-        </thead>
-        <tbody id="history-tbody"></tbody>
-      </table>
     </section>
   </main>
 
-  <!-- SETTINGS MODAL -->
-  <div id="settings-modal" class="modal-overlay" style="display: none;">
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay" style="display:none;">
     <div class="modal-card">
-      <div class="card-header-row" style="margin-bottom: 20px;">
-        <div class="card-title">AI & Reconnaissance Settings</div>
+      <div class="card-header-row">
+        <span class="card-title">Intelligence Engine Settings</span>
         <button id="btn-close-settings" class="btn-dismiss-link">Close</button>
       </div>
 
       <form id="settings-form">
-        <div class="input-group" style="margin-bottom: 14px;">
-          <label class="input-label">AI Reasoning Provider</label>
-          <select id="setting-provider" class="form-input">
-            <option value="groq">Groq Cloud API (Recommended - 500+ tokens/sec)</option>
-            <option value="local">Local AI Mode (Ollama / LM Studio)</option>
-          </select>
-        </div>
-
-        <div id="group-api-key" class="input-group" style="margin-bottom: 14px;">
-          <label class="input-label">Groq API Key (starts with gsk_...)</label>
-          <div style="position:relative;">
-            <input type="password" id="setting-api-key" class="form-input" style="width:100%;padding-right:60px;" placeholder="gsk_...">
-            <button type="button" id="btn-toggle-key" class="btn-dismiss-link" style="position:absolute;right:8px;top:8px;">Show</button>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="input-group">
+            <label class="input-label">AI Inference Provider</label>
+            <select id="setting-provider" class="form-input">
+              <option value="groq">Groq Cloud API (Ultra-Fast Free Tier)</option>
+              <option value="local">Local Inference (Ollama / LM Studio / llama.cpp)</option>
+            </select>
           </div>
-        </div>
 
-        <div class="input-group" style="margin-bottom: 14px;">
-          <label class="input-label">Model Identifier</label>
-          <select id="setting-model-select" class="form-input"></select>
-        </div>
+          <!-- Groq API Key -->
+          <div class="input-group" id="group-api-key">
+            <label class="input-label">Groq API Key</label>
+            
+            <div id="key-masked-container" style="display:none;align-items:center;justify-content:space-between;background:#09090c;border:1px solid var(--border-color);border-radius:6px;padding:8px 12px;">
+              <span id="key-masked-text" style="font-family:var(--font-mono);font-size:11px;color:var(--status-found);">gsk_...3a1b</span>
+              <button type="button" id="btn-replace-key" class="btn-graph-action" style="padding:3px 8px;font-size:10px;">Replace Key</button>
+            </div>
 
-        <div id="group-ollama-host" class="input-group" style="margin-bottom: 14px; display: none;">
-          <label class="input-label">Local Host Endpoint Preset / URL</label>
-          <select id="setting-host-preset" class="form-input" style="margin-bottom: 6px;">
-            <option value="http://127.0.0.1:11434">Ollama Default (http://127.0.0.1:11434)</option>
-            <option value="http://127.0.0.1:1234">LM Studio Default (http://127.0.0.1:1234)</option>
-            <option value="http://127.0.0.1:8080">llama.cpp Server (http://127.0.0.1:8080)</option>
-            <option value="custom">Custom URL...</option>
-          </select>
-          <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434" placeholder="e.g. http://127.0.0.1:11434">
-        </div>
+            <div id="key-input-container" style="display:flex;gap:6px;">
+              <input type="password" id="setting-api-key" class="form-input" placeholder="gsk_..." style="flex:1;">
+              <button type="button" id="btn-toggle-key" class="btn-graph-action">Show</button>
+            </div>
+          </div>
 
-        <div class="input-group" style="margin-bottom: 20px;">
-          <label class="checkbox-label">
+          <!-- Local Host Presets -->
+          <div class="input-group" id="group-ollama-host" style="display:none;">
+            <label class="input-label">Local Host Endpoint</label>
+            <div style="display:flex;gap:6px;margin-bottom:6px;">
+              <select id="setting-host-preset" class="form-input" style="flex:1;">
+                <option value="http://127.0.0.1:11434">Ollama Default (Port 11434)</option>
+                <option value="http://127.0.0.1:1234">LM Studio Default (Port 1234)</option>
+                <option value="http://127.0.0.1:8080">llama.cpp / Kobold (Port 8080)</option>
+                <option value="custom">Custom Endpoint...</option>
+              </select>
+            </div>
+            <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434">
+          </div>
+
+          <!-- Model Selection -->
+          <div class="input-group">
+            <label class="input-label">Inference Model</label>
+            <select id="setting-model-select" class="form-input"></select>
+          </div>
+
+          <!-- Enable AI -->
+          <label class="checkbox-label" style="margin-top:4px;">
             <input type="checkbox" id="setting-enable-ai" checked>
-            <span>Enable AI Context Permutations & Executive Briefing</span>
+            <span>Enable AI Context Synthesis & Executive Briefings</span>
           </label>
-        </div>
 
-        <div id="test-status-box" style="font-family:var(--font-mono);font-size:11px;margin-bottom:14px;display:none;"></div>
+          <!-- Test Status Box -->
+          <div id="test-status-box" style="display:none;font-family:var(--font-mono);font-size:11px;padding:8px 12px;border-radius:6px;background:#09090c;border:1px solid var(--border-color);"></div>
 
-        <div style="display:flex;justify-content:space-between;gap:10px;">
-          <button type="button" id="btn-test-ai" class="btn-profile-link">Test Connection</button>
-          <button type="submit" class="btn-launch-scan" style="padding:8px 20px;">Save Settings</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:12px;border-top:1px solid var(--border-color);">
+            <button type="button" id="btn-test-ai" class="btn-graph-action">Test Connection</button>
+            <button type="submit" class="btn-launch-scan">Save Settings</button>
+          </div>
         </div>
       </form>
     </div>
   </div>
 
-  <script src="/static/js/api.js"></script>
   <script src="/static/js/graph.js"></script>
-  <script src="/static/js/export.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
