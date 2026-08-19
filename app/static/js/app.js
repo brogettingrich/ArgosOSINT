@@ -409,8 +409,8 @@ function startReconScan() {
   const fuzzy = document.getElementById('chk-fuzzy').checked;
   const digits = document.getElementById('chk-digits') ? document.getElementById('chk-digits').checked : true;
 
-  if (!username && !email && !phone) {
-    alert('Please provide at least a username, email, or phone number.');
+  if (!username && !email && !phone && !realName) {
+    alert('Please provide at least a username, real name/alias, email, or phone number.');
     return;
   }
 
@@ -420,14 +420,19 @@ function startReconScan() {
   currentBriefingData = null;
   document.getElementById('results-grid').innerHTML = '';
   document.getElementById('progress-panel').style.display = 'block';
-  document.getElementById('findings-count').innerText = '0 Findings';
+  document.getElementById('findings-count').innerText = '0 Discovered';
   document.getElementById('btn-reset-results').style.display = 'inline-block';
   document.getElementById('ai-briefing-card').style.display = 'none';
 
   if (currentEventSource) currentEventSource.close();
 
   const params = new URLSearchParams({
-    username, email, phone, real_name: realName, location, fuzzy, digits, max_perms: 35
+    username,
+    known_names: realName,
+    location,
+    email,
+    phone,
+    enable_permutations: fuzzy
   });
 
   currentEventSource = new EventSource(`/api/scan/stream?${params.toString()}`);

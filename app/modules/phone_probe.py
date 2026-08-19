@@ -20,8 +20,13 @@ COUNTRY_CODES = {
     "+55": {"country": "Brazil", "iso": "BR"},
     "+52": {"country": "Mexico", "iso": "MX"},
     "+61": {"country": "Australia", "iso": "AU"},
+    "+64": {"country": "New Zealand", "iso": "NZ"},
     "+20": {"country": "Egypt", "iso": "EG"},
     "+27": {"country": "South Africa", "iso": "ZA"},
+    "+31": {"country": "Netherlands", "iso": "NL"},
+    "+41": {"country": "Switzerland", "iso": "CH"},
+    "+46": {"country": "Sweden", "iso": "SE"},
+    "+380": {"country": "Ukraine", "iso": "UA"},
 }
 
 def analyze_phone_number(raw: str) -> Dict[str, Any]:
