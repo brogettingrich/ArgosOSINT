@@ -125,7 +125,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
     async with GLOBAL_SEMAPHORE:
         async with dom_sem:
             try:
-                # 1. INSTAGRAM PROBE (HTML OpenGraph Validation)
+                # 1. INSTAGRAM PROBE (HTML OpenGraph Strict Validation)
                 if special_handler == "instagram":
                     insta_url = f"https://www.instagram.com/{username}/"
                     resp = await client.get(insta_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -138,7 +138,19 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
 
                         if m_title:
                             t_clean = html.unescape(m_title.group(1)).strip()
-                            if f"@{username.lower()}" in t_clean.lower() or f"({username.lower()})" in t_clean.lower() or username.lower() in t_clean.lower():
+                            t_lower = t_clean.lower()
+                            u_lower = username.lower()
+
+                            # Match handle with (@handle) or @handle or starting with handle
+                            is_target_profile = (
+                                f"@{u_lower}" in t_lower or 
+                                f"({u_lower})" in t_lower or
+                                t_lower.startswith(f"{u_lower} ") or
+                                t_lower.startswith(f"{u_lower}(") or
+                                f"(@{u_lower})" in t_lower
+                            )
+
+                            if is_target_profile:
                                 name_part = t_clean.split('(@')[0].split('(')[0].strip()
                                 desc_clean = html.unescape(m_desc.group(1)).strip() if m_desc else ""
                                 result["found"] = True
@@ -172,7 +184,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         result["found"] = True
                         result["metadata"] = extract_html_metadata(resp.text)
 
-                # 4. FACEBOOK PROBE (Deep Bio & Post Inspection on Name Match Only)
+                # 4. FACEBOOK PROBE (Name-Match Only)
                 elif special_handler == "facebook":
                     fb_url = f"https://m.facebook.com/{username}"
                     h_fb = {

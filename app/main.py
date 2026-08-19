@@ -17,7 +17,6 @@ from app.modules.phone_probe import analyze_phone_number
 
 app = FastAPI(title="ArgosOSINT - High-Precision Intelligence Engine")
 
-# Initialize database
 init_db()
 
 STATIC_DIR = BASE_DIR / "app" / "static"
@@ -33,13 +32,12 @@ async def get_permutations_endpoint(payload: dict):
     username = payload.get("username", "").strip()
     known_names = payload.get("known_names", [])
     location = payload.get("location", "").strip()
-    enable_digit_collisions = payload.get("enable_digit_collisions", False)
 
     perms = generate_permutations(
         seed_username=username,
         known_names=known_names,
         location=location,
-        enable_digit_collisions=enable_digit_collisions
+        enable_digit_collisions=False
     )
     return {"permutations": perms, "count": len(perms)}
 
@@ -56,7 +54,6 @@ async def scan_stream_endpoint(
         target_name = username or (known_names.split(',')[0].strip() if known_names else email) or "Anonymous Target"
         names_list = [n.strip() for n in known_names.split(",") if n.strip()] if known_names else []
 
-        # Create dossier record
         dossier_id = repo.create_dossier(
             target_name=target_name,
             seed_username=username,
@@ -65,61 +62,81 @@ async def scan_stream_endpoint(
         )
         yield f"data: {json.dumps({'type': 'init', 'dossier_id': dossier_id})}\n\n"
 
-        # Email OSINT
+        # 1. Email Intelligence
         email_result = None
         if email:
             email_result = await probe_email_intelligence(email)
             yield f"data: {json.dumps({'type': 'email_result', 'data': email_result})}\n\n"
 
-        # Phone OSINT
+        # 2. Phone Intelligence
         phone_result = None
         if phone:
             phone_result = analyze_phone_number(phone)
             yield f"data: {json.dumps({'type': 'phone_result', 'data': phone_result})}\n\n"
 
-        # Permutations
-        if enable_permutations:
-            perms = generate_permutations(
-                seed_username=username,
-                known_names=names_list,
-                location=location,
-                enable_digit_collisions=False
-            )
-            usernames_to_scan = [p["username"] for p in perms]
-        else:
-            usernames_to_scan = [username] if username else []
+        # 3. Generate Permutations (Separating Exact Seed from Variations)
+        perms = generate_permutations(
+            seed_username=username,
+            known_names=names_list,
+            location=location,
+            enable_digit_collisions=False
+        )
+        exact_seeds = [p["username"] for p in perms if p.get("is_seed")]
+        secondary_perms = [p["username"] for p in perms if not p.get("is_seed")] if enable_permutations else []
 
-        yield f"data: {json.dumps({'type': 'permutations_ready', 'count': len(usernames_to_scan)})}\n\n"
+        total_variants = len(exact_seeds) + len(secondary_perms)
+        yield f"data: {json.dumps({'type': 'permutations_ready', 'count': total_variants})}\n\n"
 
         discovered_findings = []
         seed_meta = {"username": username, "display_name": names_list[0] if names_list else ""}
 
-        # Count total probes accurately
         country_info = resolve_country(location)
         t_country = country_info["code"] if country_info else ""
         active_cat_len = sum(1 for s in SITES_DB if not s.get("country") or (t_country and s.get("country") == t_country))
-        total_probes = max(1, len(usernames_to_scan) * active_cat_len)
+        total_probes = max(1, total_variants * active_cat_len)
         completed_probes = 0
 
-        async for result in scan_usernames_async(usernames_to_scan, location=location, seed_name=names_list[0] if names_list else ""):
-            completed_probes += 1
-            if result.get("found"):
-                cand_meta = {
-                    "username": result["username"],
-                    "display_name": result.get("metadata", {}).get("display_name"),
-                    "bio": result.get("metadata", {}).get("bio"),
-                    "outbound_links": result.get("metadata", {}).get("outbound_links", [])
-                }
-                corrob = score_profile_corroboration(seed_meta, cand_meta, location=location)
-                result["corroboration"] = corrob
-                result["is_seed"] = (result["username"].lower() == username.lower()) if username else False
-                discovered_findings.append(result)
-                repo.save_scan_result(dossier_id, result)
+        # PHASE 1: SCAN EXACT SEED TARGET FIRST ACROSS ALL PLATFORMS
+        if exact_seeds:
+            async for result in scan_usernames_async(exact_seeds, location=location, seed_name=names_list[0] if names_list else ""):
+                completed_probes += 1
+                if result.get("found"):
+                    cand_meta = {
+                        "username": result["username"],
+                        "display_name": result.get("metadata", {}).get("display_name"),
+                        "bio": result.get("metadata", {}).get("bio"),
+                        "outbound_links": result.get("metadata", {}).get("outbound_links", [])
+                    }
+                    corrob = score_profile_corroboration(seed_meta, cand_meta, location=location)
+                    result["corroboration"] = corrob
+                    result["is_seed"] = True
+                    discovered_findings.append(result)
+                    repo.save_scan_result(dossier_id, result)
 
-            pct = int((completed_probes / total_probes) * 100)
-            yield f"data: {json.dumps({'type': 'probe_result', 'result': result, 'progress': {'percent': pct, 'done': completed_probes, 'total': total_probes}})}\n\n"
+                pct = int((completed_probes / total_probes) * 100)
+                yield f"data: {json.dumps({'type': 'probe_result', 'result': result, 'progress': {'percent': pct, 'done': completed_probes, 'total': total_probes}})}\n\n"
 
-        # AI OSINT Analyst Briefing
+        # PHASE 2: SCAN SECONDARY VARIATIONS
+        if secondary_perms:
+            async for result in scan_usernames_async(secondary_perms, location=location, seed_name=names_list[0] if names_list else ""):
+                completed_probes += 1
+                if result.get("found"):
+                    cand_meta = {
+                        "username": result["username"],
+                        "display_name": result.get("metadata", {}).get("display_name"),
+                        "bio": result.get("metadata", {}).get("bio"),
+                        "outbound_links": result.get("metadata", {}).get("outbound_links", [])
+                    }
+                    corrob = score_profile_corroboration(seed_meta, cand_meta, location=location)
+                    result["corroboration"] = corrob
+                    result["is_seed"] = False
+                    discovered_findings.append(result)
+                    repo.save_scan_result(dossier_id, result)
+
+                pct = int((completed_probes / total_probes) * 100)
+                yield f"data: {json.dumps({'type': 'probe_result', 'result': result, 'progress': {'percent': pct, 'done': completed_probes, 'total': total_probes}})}\n\n"
+
+        # AI OSINT Executive Briefing
         settings = repo.get_all_settings()
         briefing_data = await AIEngine.generate_dossier_briefing(
             settings=settings,
@@ -178,11 +195,6 @@ async def get_live_models_endpoint(key: str = ""):
     models = await AIEngine.get_available_models(provider="groq", api_key=key)
     return {"models": models}
 
-@app.post("/api/ai/test-connection")
-async def test_ai_connection_legacy(payload: dict):
-    return await test_settings_connection(payload)
-
-@app.get("/api/ai/models")
-async def get_models_legacy(provider: str = "groq", api_key: str = "", host: str = "http://127.0.0.1:11434"):
-    models = await AIEngine.get_available_models(provider=provider, api_key=api_key, host=host)
-    return {"models": models}
+@app.get("/api/history")
+async def get_history_endpoint():
+    return repo.get_all_dossiers()

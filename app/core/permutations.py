@@ -3,24 +3,24 @@ from typing import List, Dict, Any, Optional
 
 COUNTRY_MAPPING: Dict[str, Dict[str, Any]] = {
     "israel": {"code": "il", "name": "Israel", "aliases": ["israel", "il", "ישראל", "telaviv", "jerusalem"]},
-    "united states": {"code": "us", "name": "United States", "aliases": ["usa", "us", "united states", "america", "united states of america"]},
-    "united kingdom": {"code": "uk", "name": "United Kingdom", "aliases": ["uk", "united kingdom", "britain", "england", "gb", "great britain"]},
+    "united states": {"code": "us", "name": "United States", "aliases": ["usa", "us", "united states", "america"]},
+    "united kingdom": {"code": "uk", "name": "United Kingdom", "aliases": ["uk", "united kingdom", "britain", "england", "gb"]},
     "new zealand": {"code": "nz", "name": "New Zealand", "aliases": ["nz", "new zealand", "new zealend", "newzealand", "kiwi", "aotearoa"]},
     "australia": {"code": "au", "name": "Australia", "aliases": ["au", "australia", "aus", "oz"]},
     "canada": {"code": "ca", "name": "Canada", "aliases": ["ca", "canada", "can"]},
     "germany": {"code": "de", "name": "Germany", "aliases": ["de", "germany", "deutschland", "ger"]},
     "france": {"code": "fr", "name": "France", "aliases": ["fr", "france", "fra"]},
-    "russia": {"code": "ru", "name": "Russia", "aliases": ["ru", "russia", "rf", "rossiya"]},
+    "russia": {"code": "ru", "name": "Russia", "aliases": ["ru", "russia", "rf"]},
     "brazil": {"code": "br", "name": "Brazil", "aliases": ["br", "brazil", "brasil"]},
     "spain": {"code": "es", "name": "Spain", "aliases": ["es", "spain", "espana"]},
     "italy": {"code": "it", "name": "Italy", "aliases": ["it", "italy", "italia"]},
-    "india": {"code": "in", "name": "India", "aliases": ["in", "india", "ind", "bharat"]},
+    "india": {"code": "in", "name": "India", "aliases": ["in", "india", "ind"]},
     "netherlands": {"code": "nl", "name": "Netherlands", "aliases": ["nl", "netherlands", "holland"]},
-    "switzerland": {"code": "ch", "name": "Switzerland", "aliases": ["ch", "switzerland", "swiss"]},
-    "sweden": {"code": "se", "name": "Sweden", "aliases": ["se", "sweden", "sverige"]},
-    "ukraine": {"code": "ua", "name": "Ukraine", "aliases": ["ua", "ukraine", "ukraina"]},
-    "japan": {"code": "jp", "name": "Japan", "aliases": ["jp", "japan", "nihon", "nippon"]},
-    "china": {"code": "cn", "name": "China", "aliases": ["cn", "china", "prc"]}
+    "switzerland": {"code": "ch", "name": "Switzerland", "aliases": ["ch", "switzerland"]},
+    "sweden": {"code": "se", "name": "Sweden", "aliases": ["se", "sweden"]},
+    "ukraine": {"code": "ua", "name": "Ukraine", "aliases": ["ua", "ukraine"]},
+    "japan": {"code": "jp", "name": "Japan", "aliases": ["jp", "japan"]},
+    "china": {"code": "cn", "name": "China", "aliases": ["cn", "china"]}
 }
 
 def resolve_country(location: str) -> Optional[Dict[str, Any]]:
@@ -44,9 +44,9 @@ def generate_name_permutations(name: str, country_code: str = "") -> List[str]:
     variants = []
     if len(parts) == 1:
         base = parts[0]
-        variants.extend([base, f"{base}1", f"{base}2", f"{base}3"])
+        variants.extend([base])
         if country_code:
-            variants.extend([f"{base}_{country_code}", f"{base}.{country_code}", f"{country_code}_{base}"])
+            variants.extend([f"{base}_{country_code}", f"{base}.{country_code}"])
         return variants
 
     first, last = parts[0], parts[-1]
@@ -58,18 +58,13 @@ def generate_name_permutations(name: str, country_code: str = "") -> List[str]:
         f"{first[0]}.{last}",
         f"{first[0]}{last}",
         f"{last}_{first}",
-        f"{last}.{first}",
-        f"{last}{first}",
-        f"{first}_{last[0]}",
-        f"{first}.{last[0]}"
+        f"{last}.{first}"
     ])
 
     if country_code:
         variants.extend([
             f"{first}_{last}_{country_code}",
-            f"{first}.{last}.{country_code}",
-            f"{first}{last}_{country_code}",
-            f"{first}_{last[0]}_{country_code}"
+            f"{first}{last}_{country_code}"
         ])
 
     return list(dict.fromkeys(variants))
@@ -86,7 +81,7 @@ def generate_permutations(
     country_info = resolve_country(location)
     country_code = country_info["code"] if country_info else ""
 
-    # 1. If seed username exists, add exact seed
+    # 1. Exact Seed Identifier
     if seed_username:
         clean_seed = seed_username.strip().lower()
         seen.add(clean_seed)
@@ -94,10 +89,11 @@ def generate_permutations(
             "username": clean_seed,
             "category": "Exact Match",
             "rule": "Seed identifier",
-            "similarity": 100
+            "similarity": 100,
+            "is_seed": True
         })
 
-        # Delimiter permutations (_ vs . vs -)
+        # Delimiter permutations (_ vs . vs none)
         for delim in ["_", ".", "-"]:
             if delim in clean_seed:
                 for target_delim in ["_", ".", ""]:
@@ -108,52 +104,54 @@ def generate_permutations(
                             results.append({
                                 "username": p,
                                 "category": "Delimiter Swap",
-                                "rule": f"Replaced '{delim}' with '{target_delim or 'none'}'",
-                                "similarity": 93
+                                "rule": f"Delimiter swap ({delim} -> {target_delim or 'none'})",
+                                "similarity": 95,
+                                "is_seed": False
                             })
 
-        # Country code variations
+        # If solid word (e.g. ozalmagor) and known_names given (e.g. Oz Almagor)
+        if known_names:
+            for name in known_names:
+                clean_n = re.sub(r'[^a-zA-Z0-9\s]', '', name.strip().lower()).split()
+                if len(clean_n) >= 2:
+                    f, l = clean_n[0], clean_n[-1]
+                    for joined in [f"{f}_{l}", f"{f}.{l}"]:
+                        if joined not in seen:
+                            seen.add(joined)
+                            results.append({
+                                "username": joined,
+                                "category": "Name Construction",
+                                "rule": f"Joined name variant '{joined}'",
+                                "similarity": 92,
+                                "is_seed": False
+                            })
+
+        # Country code suffix (at most 2 high-probability variants)
         if country_code:
-            country_variants = [
-                f"{clean_seed}_{country_code}",
-                f"{clean_seed}.{country_code}",
-                f"{country_code}_{clean_seed}"
-            ]
-            for cv in country_variants:
+            for cv in [f"{clean_seed}_{country_code}", f"{clean_seed}.{country_code}"]:
                 if cv not in seen:
                     seen.add(cv)
                     results.append({
                         "username": cv,
                         "category": "Country Context",
-                        "rule": f"Appended country code '{country_code}' ({country_info['name']})",
-                        "similarity": 90
+                        "rule": f"Appended country suffix '_{country_code}'",
+                        "similarity": 90,
+                        "is_seed": False
                     })
 
-        # Digit collisions
-        if enable_digit_collisions:
-            for digit in ["1", "2", "3", "7", "9", "01", "123"]:
-                pv = f"{clean_seed}{digit}"
-                if pv not in seen:
-                    seen.add(pv)
-                    results.append({
-                        "username": pv,
-                        "category": "Digit Collision",
-                        "rule": f"Appended digit suffix '{digit}'",
-                        "similarity": 94
-                    })
-
-    # 2. Known names handling
-    if known_names:
+    # 2. Known names if no seed username was provided
+    elif known_names:
         for name in known_names:
             name_perms = generate_name_permutations(name, country_code=country_code)
-            for np in name_perms:
+            for i, np in enumerate(name_perms):
                 if np not in seen:
                     seen.add(np)
                     results.append({
                         "username": np,
                         "category": "Name Construction",
                         "rule": f"Constructed handle from name '{name}'",
-                        "similarity": 88
+                        "similarity": 95 if i == 0 else 88,
+                        "is_seed": (i == 0)
                     })
 
     return results
