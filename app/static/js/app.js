@@ -391,7 +391,6 @@ async function setupSettingsModal() {
     });
   }
 
-  // Load Initial Settings
   try {
     const serverSettings = await fetch('/api/settings').then(r => r.json());
     if (serverSettings.ai_provider) providerSelect.value = serverSettings.ai_provider;
@@ -675,7 +674,17 @@ function renderFindingsGrid() {
     return;
   }
 
-  filtered.forEach(item => addFindingCard(item));
+  // Count shared avatar hashes for correlation badge
+  const hashMatches = {};
+  currentFindings.forEach(f => {
+    const h = f.metadata?.avatar_hash;
+    if (h) {
+      if (!hashMatches[h]) hashMatches[h] = [];
+      hashMatches[h].push(f.site);
+    }
+  });
+
+  filtered.forEach(item => addFindingCard(item, hashMatches));
 }
 
 function launchPivotScan(targetHandle) {
@@ -687,12 +696,13 @@ function launchPivotScan(targetHandle) {
   }
 }
 
-function addFindingCard(item) {
+function addFindingCard(item, hashMatches = {}) {
   const grid = document.getElementById('results-grid');
   const card = document.createElement('div');
   card.className = 'target-card';
   const corrob = item.corroboration || { score: 50, verdict: 'VERIFIED' };
   const meta = item.metadata || {};
+  const metrics = meta.metrics || {};
   
   const aliasTag = corrob.matched_alias ? `<span class="alias-tag">Matched: ${corrob.matched_alias}</span>` : '';
   const displayName = meta.display_name ? `<div style="font-size:13px;font-weight:600;color:var(--text-primary);">${meta.display_name}</div>` : '';
@@ -703,10 +713,49 @@ function addFindingCard(item) {
     <div class="profile-avatar-fallback">${item.site.substring(0, 2).toUpperCase()}</div>
   `;
 
+  // Avatar match badge
+  let avatarMatchBadge = '';
+  if (meta.avatar_hash && hashMatches[meta.avatar_hash] && hashMatches[meta.avatar_hash].length > 1) {
+    const others = hashMatches[meta.avatar_hash].filter(s => s !== item.site);
+    if (others.length > 0) {
+      avatarMatchBadge = `<div class="avatar-match-badge">Shared Photo with ${others.join(', ')}</div>`;
+    }
+  }
+
+  // Follower / Metric Badges
+  let metricsHtml = '';
+  const metricItems = [];
+  if (metrics.followers) metricItems.push(`<span>Followers: <strong>${metrics.followers}</strong></span>`);
+  if (metrics.following) metricItems.push(`<span>Following: <strong>${metrics.following}</strong></span>`);
+  if (metrics.posts) metricItems.push(`<span>Posts: <strong>${metrics.posts}</strong></span>`);
+  if (metrics.repos) metricItems.push(`<span>Repos: <strong>${metrics.repos}</strong></span>`);
+
+  if (metricItems.length > 0) {
+    metricsHtml = `
+      <div class="metrics-row">
+        ${metricItems.map(m => `<div class="metric-badge">${m}</div>`).join('')}
+      </div>
+    `;
+  }
+
   const bioHtml = meta.bio ? `
     <div class="profile-bio-box">${meta.bio}</div>
   ` : '';
 
+  // Outbound Links
+  let outboundHtml = '';
+  if (meta.outbound_links && meta.outbound_links.length > 0) {
+    outboundHtml = `
+      <div class="outbound-row">
+        ${meta.outbound_links.map(link => {
+          let label = link.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+          return `<a href="${link}" target="_blank" rel="noopener noreferrer" class="btn-outbound-link">${label} [↗]</a>`;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  // Handle Pivots
   let pivotsHtml = '';
   if (meta.mentioned_handles && meta.mentioned_handles.length > 0) {
     pivotsHtml = `
@@ -739,11 +788,14 @@ function addFindingCard(item) {
       <div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;">
         ${displayName}
         <div class="account-handle">Handle: <strong>@${item.username}</strong></div>
+        ${avatarMatchBadge}
       </div>
     </div>
 
+    ${metricsHtml}
     ${aliasTag}
     ${bioHtml}
+    ${outboundHtml}
     ${pivotsHtml}
 
     <a href="${item.profile_url}" target="_blank" rel="noopener noreferrer" class="btn-profile-link">

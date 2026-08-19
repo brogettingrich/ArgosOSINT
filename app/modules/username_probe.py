@@ -2,6 +2,7 @@ import asyncio
 import re
 import html
 import time
+import hashlib
 import httpx
 from typing import AsyncGenerator, Dict, Any, List, Optional
 from urllib.parse import urlparse
@@ -34,11 +35,19 @@ CHALLENGE_PATTERNS = [
     "this content isn't available right now"
 ]
 
+def generate_avatar_fingerprint(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    clean = re.sub(r'[?&](stp|oh|oe|ccb|_nc_sid|_nc_ohc|token)=[^&]+', '', url)
+    return hashlib.md5(clean.encode('utf-8')).hexdigest()[:12]
+
 def extract_html_metadata(html_text: str) -> Dict[str, Any]:
     meta = {
         "display_name": None,
         "bio": None,
         "avatar_url": None,
+        "avatar_hash": None,
+        "metrics": {},
         "outbound_links": [],
         "mentioned_handles": [],
         "mentioned_emails": []
@@ -64,11 +73,20 @@ def extract_html_metadata(html_text: str) -> Dict[str, Any]:
             meta["mentioned_handles"] = list(set(re.findall(r'@([a-zA-Z0-9._]{3,30})', bio_text)))
             meta["mentioned_emails"] = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', bio_text)))
 
+            m_f = re.search(r'([\d,KkMm.]+)\s+Followers', bio_text, re.I)
+            m_fg = re.search(r'([\d,KkMm.]+)\s+Following', bio_text, re.I)
+            m_p = re.search(r'([\d,KkMm.]+)\s+Posts', bio_text, re.I)
+            if m_f: meta["metrics"]["followers"] = m_f.group(1)
+            if m_fg: meta["metrics"]["following"] = m_fg.group(1)
+            if m_p: meta["metrics"]["posts"] = m_p.group(1)
+
     img_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', html_text, re.I)
     if img_match:
-        meta["avatar_url"] = img_match.group(1).strip()
+        img_url = img_match.group(1).strip()
+        meta["avatar_url"] = img_url
+        meta["avatar_hash"] = generate_avatar_fingerprint(img_url)
 
-    outbound = re.findall(r'href=["\'](https?://(?:www\.)?(?:linktr\.ee|beacons\.ai|carrd\.co|github\.com|twitter\.com|x\.com|t\.me)/[a-zA-Z0-9._/-]+)["\']', html_text, re.I)
+    outbound = re.findall(r'href=["\'](https?://(?:www\.)?(?:linktr\.ee|beacons\.ai|carrd\.co|github\.com|twitter\.com|x\.com|t\.me|discord\.gg)/[a-zA-Z0-9._/-]+)["\']', html_text, re.I)
     meta["outbound_links"] = list(set(outbound))[:5]
 
     return meta
@@ -122,11 +140,23 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                             if is_target_profile:
                                 name_part = t_clean.split('(@')[0].split('(')[0].strip()
                                 desc_clean = html.unescape(m_desc.group(1)).strip() if m_desc else ""
+                                img_url = m_img.group(1).strip() if m_img else None
+
+                                metrics = {}
+                                m_f = re.search(r'([\d,KkMm.]+)\s+Followers', desc_clean, re.I)
+                                m_fg = re.search(r'([\d,KkMm.]+)\s+Following', desc_clean, re.I)
+                                m_p = re.search(r'([\d,KkMm.]+)\s+Posts', desc_clean, re.I)
+                                if m_f: metrics["followers"] = m_f.group(1)
+                                if m_fg: metrics["following"] = m_fg.group(1)
+                                if m_p: metrics["posts"] = m_p.group(1)
+
                                 result["found"] = True
                                 result["metadata"] = {
                                     "display_name": name_part or u_clean,
                                     "bio": desc_clean,
-                                    "avatar_url": m_img.group(1).strip() if m_img else None
+                                    "avatar_url": img_url,
+                                    "avatar_hash": generate_avatar_fingerprint(img_url),
+                                    "metrics": metrics
                                 }
 
                 # 2. SPOTIFY PROBE
@@ -141,11 +171,14 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         if m_title:
                             t = html.unescape(m_title.group(1)).strip()
                             if t and "web player" not in t.lower() and not t.lower().startswith("spotify"):
+                                img_url = m_img.group(1).strip() if m_img else None
                                 result["found"] = True
                                 result["metadata"] = {
                                     "display_name": t,
                                     "bio": m_desc.group(1) if m_desc else "",
-                                    "avatar_url": m_img.group(1) if m_img else None
+                                    "avatar_url": img_url,
+                                    "avatar_hash": generate_avatar_fingerprint(img_url),
+                                    "metrics": {}
                                 }
 
                 # 3. TWITCH PROBE
@@ -160,14 +193,17 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         if m_title:
                             t = html.unescape(m_title.group(1)).strip()
                             if u_clean in t.lower() and "twitch" in t.lower():
+                                img_url = m_img.group(1).strip() if m_img else None
                                 result["found"] = True
                                 result["metadata"] = {
                                     "display_name": t.split('-')[0].strip(),
                                     "bio": m_desc.group(1) if m_desc else "",
-                                    "avatar_url": m_img.group(1) if m_img else None
+                                    "avatar_url": img_url,
+                                    "avatar_hash": generate_avatar_fingerprint(img_url),
+                                    "metrics": {}
                                 }
 
-                # 4. FACEBOOK PROBE (Robust Public Profile Detection)
+                # 4. FACEBOOK PROBE
                 elif special_handler == "facebook":
                     fb_url = f"https://m.facebook.com/{u_clean}"
                     h_fb = {
@@ -206,11 +242,14 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                 post_preview = clean_posts[0][:120].replace('"', "'")
                                 bio_combined += f" | Recent post: '{post_preview}'"
 
+                            img_url = m_og_img.group(1).strip() if m_og_img else None
                             result["found"] = True
                             result["metadata"] = {
                                 "display_name": display_name,
                                 "bio": bio_combined,
-                                "avatar_url": m_og_img.group(1).strip() if m_og_img else None
+                                "avatar_url": img_url,
+                                "avatar_hash": generate_avatar_fingerprint(img_url),
+                                "metrics": {}
                             }
 
                 # 5. TIKTOK PROBE
@@ -221,11 +260,14 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                     if resp.status_code == 200:
                         data = resp.json()
                         if data.get("author_name") or data.get("title"):
+                            img_url = data.get("thumbnail_url")
                             result["found"] = True
                             result["metadata"] = {
                                 "display_name": data.get("author_name"),
                                 "bio": data.get("title"),
-                                "avatar_url": data.get("thumbnail_url")
+                                "avatar_url": img_url,
+                                "avatar_hash": generate_avatar_fingerprint(img_url),
+                                "metrics": {}
                             }
 
                 # 6. REDDIT PROBE
@@ -244,15 +286,31 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
                         data = resp.json()
+                        img_url = data.get("avatar_url")
+                        metrics = {}
+                        if "followers" in data: metrics["followers"] = str(data.get("followers"))
+                        if "following" in data: metrics["following"] = str(data.get("following"))
+                        if "public_repos" in data: metrics["repos"] = str(data.get("public_repos"))
+
+                        bio_str = data.get("bio") or ""
+                        if data.get("company"): bio_str += f" | {data.get('company')}"
+                        if data.get("location"): bio_str += f" | {data.get('location')}"
+
+                        outbound = []
+                        if data.get("blog"): outbound.append(data.get("blog"))
+                        if data.get("twitter_username"): outbound.append(f"https://x.com/{data.get('twitter_username')}")
+
                         result["found"] = True
                         result["metadata"] = {
-                            "display_name": data.get("name"),
-                            "bio": data.get("bio"),
-                            "avatar_url": data.get("avatar_url"),
-                            "outbound_links": [data.get("blog")] if data.get("blog") else []
+                            "display_name": data.get("name") or u_clean,
+                            "bio": bio_str.strip(" | "),
+                            "avatar_url": img_url,
+                            "avatar_hash": generate_avatar_fingerprint(img_url),
+                            "metrics": metrics,
+                            "outbound_links": outbound
                         }
 
-                # 9. TELEGRAM WEB PROBE
+                # 8. TELEGRAM WEB PROBE
                 elif special_handler == "telegram":
                     tg_url = f"https://t.me/{u_clean}"
                     resp = await client.get(tg_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -262,7 +320,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         result["found"] = True
                         result["metadata"] = extract_html_metadata(text)
 
-                # 10. STEAM XML PROBE
+                # 9. STEAM XML PROBE
                 elif special_handler == "steam":
                     steam_url = f"https://steamcommunity.com/id/{u_clean}/?xml=1"
                     resp = await client.get(steam_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -271,11 +329,15 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         result["found"] = True
                         meta = extract_html_metadata(resp.text)
                         st_name = re.search(r'<steamID><!\[CDATA\[(.*?)\]\]></steamID>', resp.text)
+                        st_avatar = re.search(r'<avatarFull><!\[CDATA\[(.*?)\]\]></avatarFull>', resp.text)
                         if st_name:
                             meta["display_name"] = st_name.group(1)
+                        if st_avatar:
+                            meta["avatar_url"] = st_avatar.group(1)
+                            meta["avatar_hash"] = generate_avatar_fingerprint(st_avatar.group(1))
                         result["metadata"] = meta
 
-                # 11. STANDARD MULTI-FACTOR VERIFICATION
+                # 10. STANDARD MULTI-FACTOR VERIFICATION
                 else:
                     resp = await client.get(url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT, follow_redirects=True)
                     result["status_code"] = resp.status_code
