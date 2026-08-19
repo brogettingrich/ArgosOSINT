@@ -1,4 +1,4 @@
-/* Minimalist Obsidian Cards & Inputs */
+/* Luxury Obsidian Cards & Inputs */
 .search-card, .modal-card, .briefing-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -10,11 +10,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .card-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.6px;
   color: var(--text-primary);
@@ -24,18 +24,18 @@
 .grid-inputs {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .input-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .input-label {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -44,8 +44,8 @@
 }
 
 .form-input {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: #09090c;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   padding: 9px 12px;
   color: var(--text-primary);
@@ -56,8 +56,38 @@
 }
 
 .form-input:focus {
-  border-color: var(--border-active);
-  background: var(--bg-tertiary);
+  border-color: rgba(255, 255, 255, 0.22);
+  background: #0d0d12;
+}
+
+/* Subtle, Decluttered Variants Bar */
+.permutation-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  margin-bottom: 10px;
+  min-height: 20px;
+}
+
+.variants-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.variants-badge .badge-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--status-found);
 }
 
 .options-row {
@@ -81,7 +111,7 @@
 
 .btn-launch-scan {
   background: var(--text-primary);
-  color: var(--bg-primary);
+  color: #000000;
   border: none;
   border-radius: 6px;
   padding: 9px 22px;
@@ -105,13 +135,13 @@
   padding: 5px 12px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  background: #08080b;
   cursor: pointer;
 }
 
 .ai-status-pill .status-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--status-error);
 }
@@ -121,7 +151,7 @@
 }
 
 .ai-status-pill.online {
-  border-color: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.25);
   color: var(--status-found);
 }
 
@@ -152,7 +182,7 @@
 .progress-bar-bg {
   width: 100%;
   height: 3px;
-  background: var(--bg-tertiary);
+  background: #111116;
   border-radius: 2px;
   overflow: hidden;
 }
@@ -170,14 +200,14 @@
   gap: 6px;
   flex-wrap: wrap;
   padding: 8px 12px;
-  background: var(--bg-secondary);
+  background: #07070a;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   margin-top: 8px;
 }
 
 .sub-chip {
-  background: var(--bg-tertiary);
+  background: #0d0d12;
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   font-size: 11px;
@@ -189,7 +219,7 @@
 }
 
 .sub-chip:hover {
-  background: var(--bg-card-hover);
+  background: #14141c;
   color: var(--text-primary);
   border-color: var(--border-active);
 }
@@ -205,7 +235,7 @@
 .results-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 14px;
+  gap: 12px;
   margin-top: 14px;
 }
 
@@ -240,10 +270,10 @@
 }
 
 .category-tag {
-  font-size: 10px;
+  font-size: 9px;
   font-family: var(--font-mono);
   color: var(--text-muted);
-  background: var(--bg-secondary);
+  background: #0b0b0e;
   border: 1px solid var(--border-color);
   padding: 2px 6px;
   border-radius: 4px;
@@ -261,8 +291,8 @@
 }
 
 .corrob-badge.exact {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.3);
   color: var(--text-primary);
 }
 
@@ -278,7 +308,7 @@
   border-radius: 50%;
   object-fit: cover;
   border: 1px solid var(--border-color);
-  background: var(--bg-tertiary);
+  background: #111116;
   flex-shrink: 0;
 }
 
@@ -289,7 +319,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-tertiary);
+  background: #111116;
   border: 1px solid var(--border-color);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -299,7 +329,7 @@
 }
 
 .profile-bio-box {
-  background: var(--bg-secondary);
+  background: #09090c;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 10px;
@@ -317,7 +347,7 @@
 }
 
 .pivots-label {
-  font-size: 10px;
+  font-size: 9px;
   font-family: var(--font-mono);
   color: var(--status-warn);
   font-weight: 600;
@@ -325,8 +355,8 @@
 }
 
 .btn-pivot-chip {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.3);
   color: var(--status-warn);
   font-size: 10px;
   font-family: var(--font-mono);
@@ -338,7 +368,7 @@
 }
 
 .btn-pivot-chip:hover {
-  background: rgba(245, 158, 11, 0.2);
+  background: rgba(245, 158, 11, 0.15);
   border-color: var(--status-warn);
 }
 
@@ -348,7 +378,7 @@
   justify-content: center;
   gap: 6px;
   padding: 7px 12px;
-  background: var(--bg-secondary);
+  background: #09090c;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 11px;
@@ -358,7 +388,7 @@
 }
 
 .btn-profile-link:hover {
-  background: var(--bg-tertiary);
+  background: #111116;
   border-color: var(--border-active);
 }
 
@@ -375,7 +405,7 @@
 }
 
 .btn-settings-gear:hover, .btn-dismiss-link:hover {
-  background: var(--bg-tertiary);
+  background: #111116;
   color: var(--text-primary);
   border-color: var(--border-active);
 }
@@ -387,7 +417,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
-  background: var(--bg-secondary);
+  background: #060608;
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 8px 14px;
@@ -400,7 +430,7 @@
 }
 
 .btn-graph-action {
-  background: var(--bg-tertiary);
+  background: #0d0d12;
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   font-size: 11px;
@@ -412,7 +442,7 @@
 }
 
 .btn-graph-action:hover {
-  background: var(--bg-card-hover);
+  background: #14141c;
   color: var(--text-primary);
   border-color: var(--border-active);
 }
@@ -422,7 +452,7 @@
   width: 100%;
   height: 100%;
   min-height: 520px;
-  background: #05070a;
+  background: #030305;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   position: relative;
@@ -433,8 +463,8 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -464,7 +494,7 @@
 }
 
 .filter-chip.active {
-  background: var(--bg-tertiary);
+  background: #121217;
   border-color: var(--border-active);
   color: var(--text-primary);
   font-weight: 600;

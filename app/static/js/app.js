@@ -72,7 +72,6 @@ function setupCategoryFilterChips() {
 }
 
 function setupGraphControls() {
-  // Graph Category Filter Chips
   document.querySelectorAll('#graph-category-filters .filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       document.querySelectorAll('#graph-category-filters .filter-chip').forEach(c => c.classList.remove('active'));
@@ -84,7 +83,6 @@ function setupGraphControls() {
     });
   });
 
-  // Graph Search Input
   const searchInput = document.getElementById('graph-search-input');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
@@ -92,7 +90,6 @@ function setupGraphControls() {
     });
   }
 
-  // Zoom / Recenter / Freeze Buttons
   const btnZoomIn = document.getElementById('btn-graph-zoom-in');
   const btnZoomOut = document.getElementById('btn-graph-zoom-out');
   const btnRecenter = document.getElementById('btn-graph-recenter');
@@ -312,12 +309,17 @@ function setupPermutationPreview() {
         const perms = res.permutations || [];
         if (perms.length > 0) {
           previewBar.innerHTML = `
-            <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);font-weight:600;">ACTIVE TARGET VARIANTS (${perms.length}):</span>
-            ${perms.slice(0, 10).map(p => `<span class="perm-tag ${p.rule === 'exact' ? 'exact' : ''}">@${p.username}</span>`).join('')}
-            ${perms.length > 10 ? `<span style="font-size:10px;color:var(--text-muted);">+${perms.length - 10} more</span>` : ''}
+            <div class="variants-badge">
+              <span class="badge-dot"></span>
+              <span>${perms.length} target handle variations active in scan matrix</span>
+            </div>
           `;
+        } else {
+          previewBar.innerHTML = '';
         }
-      } catch (e) {}
+      } catch (e) {
+        previewBar.innerHTML = '';
+      }
     }, 300);
   };
 
