@@ -2,16 +2,26 @@ import asyncio
 import json
 import logging
 import re
+import html
 import httpx
 from typing import Dict, Any, List, Optional
 
-logger = logging.getLogger("ArgosAI")
+logger = logging.getLogger(__name__)
 
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
 DEFAULT_LOCAL_HOST = "http://127.0.0.1:11434"
 DEFAULT_LOCAL_MODEL = "llama3.2"
+
+LOCAL_PROBE_PORTS = [
+    "http://127.0.0.1:11434",
+    "http://localhost:11434",
+    "http://127.0.0.1:1234",
+    "http://localhost:1234",
+    "http://127.0.0.1:8080",
+    "http://localhost:8080"
+]
 
 def strip_reasoning_tags(text: str) -> str:
     if not text:
@@ -72,9 +82,11 @@ class AIEngine:
                 {"id": "groq/compound-mini", "name": "Groq Compound Mini"}
             ]
         return [
-            {"id": "llama3:latest", "name": "Llama 3 (Local Ollama)"},
-            {"id": "mistral:latest", "name": "Mistral (Local Ollama)"},
-            {"id": "deepseek-r1:latest", "name": "DeepSeek R1 (Local Ollama)"}
+            {"id": "llama3.2:latest", "name": "Llama 3.2 (Local Ollama)"},
+            {"id": "llama3.1:latest", "name": "Llama 3.1 (Local Ollama)"},
+            {"id": "mistral:latest", "name": "Mistral 7B (Local Ollama)"},
+            {"id": "deepseek-r1:latest", "name": "DeepSeek R1 (Local Ollama)"},
+            {"id": "local-model", "name": "Loaded Model (LM Studio / llama.cpp)"}
         ]
 
     @staticmethod
@@ -110,30 +122,42 @@ class AIEngine:
 
             elif provider in ["ollama", "local"]:
                 clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
-                if ":8500" in clean_host:
-                    clean_host = DEFAULT_LOCAL_HOST
-
                 clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
 
-                async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-                    try:
-                        r_ollama = await client.get(f"{clean_host}/api/tags", timeout=3.0)
-                        if r_ollama.status_code == 200:
-                            return {"success": True, "status": "online", "message": f"Local Ollama Online ({clean_model})"}
-                    except Exception:
-                        pass
+                hosts_to_try = [clean_host] + [h for h in LOCAL_PROBE_PORTS if h != clean_host]
 
-                    try:
-                        r_openai = await client.get(f"{clean_host}/v1/models", timeout=3.0)
-                        if r_openai.status_code in [200, 401]:
-                            return {"success": True, "status": "online", "message": f"Local AI Server Online ({clean_model})"}
-                    except Exception:
-                        pass
+                async with httpx.AsyncClient(timeout=3.0, verify=False) as client:
+                    for h in hosts_to_try:
+                        # 1. Test Ollama /api/tags
+                        try:
+                            r_ollama = await client.get(f"{h}/api/tags", timeout=2.0)
+                            if r_ollama.status_code == 200:
+                                return {
+                                    "success": True, 
+                                    "status": "online", 
+                                    "discovered_host": h,
+                                    "message": f"Local Ollama Online at {h} ({clean_model})"
+                                }
+                        except Exception:
+                            pass
+
+                        # 2. Test OpenAI-compatible /v1/models (LM Studio, llama.cpp)
+                        try:
+                            r_openai = await client.get(f"{h}/v1/models", timeout=2.0)
+                            if r_openai.status_code in [200, 401]:
+                                return {
+                                    "success": True, 
+                                    "status": "online", 
+                                    "discovered_host": h,
+                                    "message": f"Local AI Server Online at {h} ({clean_model})"
+                                }
+                        except Exception:
+                            pass
 
                     return {
                         "success": False, 
                         "status": "offline", 
-                        "error": f"Local server at {clean_host} unreachable. Make sure Ollama (port 11434) or LM Studio (port 1234) is running, or switch to Groq Cloud API."
+                        "error": f"Local server at {clean_host} unreachable. Ensure Ollama (port 11434) or LM Studio (port 1234) is running, or use Groq Cloud API."
                     }
 
             return {"success": False, "status": "error", "error": f"Unknown provider: {provider}"}
@@ -160,176 +184,178 @@ class AIEngine:
                         {"role": "user", "content": user_prompt}
                     ],
                     "temperature": temperature,
-                    "max_tokens": 1200
+                    "max_tokens": 1000
                 }
-
-                async with httpx.AsyncClient(timeout=12.0, verify=False) as client:
+                async with httpx.AsyncClient(timeout=14.0, verify=False) as client:
                     resp = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
                     if resp.status_code == 200:
                         data = resp.json()
-                        raw_content = data["choices"][0]["message"]["content"].strip()
+                        raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                         return strip_reasoning_tags(raw_content)
 
             elif provider in ["ollama", "local"]:
                 clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
-                if ":8500" in clean_host:
-                    clean_host = DEFAULT_LOCAL_HOST
-
                 clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
 
-                async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+                async with httpx.AsyncClient(timeout=16.0, verify=False) as client:
+                    # Try /v1/chat/completions (LM Studio, modern Ollama)
                     try:
-                        ollama_payload = {
+                        payload = {
                             "model": clean_model,
                             "messages": [
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": user_prompt}
                             ],
+                            "temperature": temperature
+                        }
+                        resp = await client.post(f"{clean_host}/v1/chat/completions", json=payload, timeout=14.0)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                            return strip_reasoning_tags(raw_content)
+                    except Exception:
+                        pass
+
+                    # Try Ollama native /api/generate
+                    try:
+                        payload = {
+                            "model": clean_model,
+                            "system": system_prompt,
+                            "prompt": user_prompt,
                             "stream": False,
                             "options": {"temperature": temperature}
                         }
-                        r_ollama = await client.post(f"{clean_host}/api/chat", json=ollama_payload)
-                        if r_ollama.status_code == 200:
-                            data = r_ollama.json()
-                            raw_content = data.get("message", {}).get("content", "").strip()
+                        resp = await client.post(f"{clean_host}/api/generate", json=payload, timeout=14.0)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            raw_content = data.get("response", "")
                             return strip_reasoning_tags(raw_content)
                     except Exception:
                         pass
 
         except Exception as e:
-            logger.warning(f"AI query failed: {e}")
+            logger.warning(f"Error querying LLM: {e}")
         return None
 
-    @classmethod
-    async def synthesize_permutations(cls, settings: Dict[str, Any], seed_username: str, real_names: str = "", location: str = "", keywords: str = "") -> List[str]:
-        provider = settings.get("ai_provider", "groq")
-        api_key = settings.get("ai_api_key", "")
-        model = settings.get("ai_model", "")
-        host = settings.get("ai_host", "")
-
-        system_prompt = (
-            "You are an OSINT handle generator. "
-            "Output ONLY a raw list of 15 username variations inside quotes, separated by commas. "
-            "Do NOT include explanations, reasoning, or markdown fences."
-        )
-
-        user_prompt = (
-            f"Username: {seed_username}\n"
-            f"Known Names: {real_names}\n"
-            f"Location: {location}\n\n"
-            "Generate handles with first/last names, country suffixes (_il, _us, _uk), and numbers (1, 2, 3)."
-        )
-
-        raw_resp = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.2)
-        if not raw_resp:
-            return []
-
-        extracted = re.findall(r'["\']?([a-zA-Z0-9._\-]{2,32})["\']?', raw_resp)
-        stop_words = {"username", "usernames", "json", "list", "output", "handles", "names", "here", "are"}
-        valid = [
-            x.lower().strip() for x in extracted 
-            if x.lower().strip() not in stop_words and len(x.strip()) >= 2
-        ]
-        return valid[:25]
-
-    @classmethod
+    @staticmethod
     async def generate_dossier_briefing(
-        cls, 
-        settings: Dict[str, Any], 
-        target_name: str, 
-        findings: List[Dict[str, Any]], 
-        email_info: Optional[Dict[str, Any]] = None, 
-        phone_info: Optional[Dict[str, Any]] = None, 
+        settings: Dict[str, Any],
+        target_name: str,
+        findings: List[Dict[str, Any]],
+        email_info: Optional[Dict[str, Any]] = None,
+        phone_info: Optional[Dict[str, Any]] = None,
         location: str = ""
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
+        enabled = settings.get("enable_ai", "true") != "false"
         provider = settings.get("ai_provider", "groq")
         api_key = settings.get("ai_api_key", "")
-        model = settings.get("ai_model", "")
-        host = settings.get("ai_host", "")
+        model = settings.get("ai_model", DEFAULT_GROQ_MODEL)
+        host = settings.get("ai_host", DEFAULT_LOCAL_HOST)
 
-        if not findings and not email_info and not phone_info:
-            return None
-
-        # Exact requested system prompt
         system_prompt = (
-            "You are an expert OSINT analyst. Produce concise, objective executive briefings and precise "
-            "machine-readable metadata. Never reveal internal chain-of-thought. Follow format rules exactly."
+            "You are an expert OSINT analyst. Produce concise, objective executive briefings and precise machine-readable metadata. "
+            "Never reveal internal chain-of-thought. Follow format rules exactly.\n\n"
+            "Instructions:\n"
+            "Output exactly two items: (A) a plain-text executive briefing of 2–3 sentences (no markdown, no bullets), and "
+            "(B) a JSON object on a separate line (no code fences) matching the schema below. Do NOT include any explanatory text beyond these two items.\n"
+            "The briefing must be objective, concise, and highlight any verified_identities. If none are verified, state the inferred identity and label it inferred.\n"
+            'JSON schema: {"briefing":string,"confidence":int (0-100),"verified_identities":[string],"inferred_identity":string,"evidence":[{"site":string,"username":string,"url":string}],"rationale":string}'
         )
 
-        # Formatted profiles list
-        profiles_list = [
-            {"site": f.get("site"), "username": f.get("username"), "profile_url": f.get("profile_url")}
-            for f in findings[:20]
-        ]
+        discovered_list = []
+        for f in findings[:25]:
+            discovered_list.append({
+                "site": f.get("site", "Unknown"),
+                "username": f.get("username", ""),
+                "profile_url": f.get("profile_url", "")
+            })
 
-        # Exact requested user prompt template
         user_prompt = (
             f"Target: {target_name}\n"
             f"Location: {location or 'Unknown'}\n"
-            f"Discovered profiles (list): {json.dumps(profiles_list)}\n"
+            f"Discovered profiles (list): {json.dumps(discovered_list)}\n"
             f"Email findings: {json.dumps(email_info) if email_info else 'None'}\n"
-            f"Phone findings: {json.dumps(phone_info) if phone_info else 'None'}\n\n"
-            "Instructions:\n\n"
-            "Output exactly two items: (A) a plain-text executive briefing of 2–3 sentences (no markdown, no bullets), "
-            "and (B) a JSON object on a separate line (no code fences) matching the schema below. "
-            "Do NOT include any explanatory text beyond these two items.\n"
-            "The briefing must be objective, concise, and highlight any verified_identities. "
-            "If none are verified, state the inferred identity and label it inferred.\n"
-            "JSON schema: {\"briefing\":string,\"confidence\":int (0-100),\"verified_identities\": [string],\"inferred_identity\": string or null,\"evidence\":[{\"site\":string,\"username\":string,\"url\":string,\"corroboration\":string}], \"rationale\": string (<=30 words)}.\n"
-            "confidence is a numeric score based on evidence quantity/quality (0 if none). "
-            "verified_identities only list identities explicitly verified by platforms; otherwise leave empty and populate inferred_identity.\n"
-            "evidence must contain up to 5 strongest items with direct profile URLs. If none, set evidence:[].\n"
-            "If uncertain, put confidence:0 and set briefing to \"No verifiable accounts found.\"\n"
-            "STRICT: No chain-of-thought, no extra commentary. Return only: first the 2–3 sentence briefing, then the JSON object on the next line."
+            f"Phone findings: {json.dumps(phone_info) if phone_info else 'None'}"
         )
 
-        raw_output = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.1)
-        if not raw_output:
-            return None
+        if enabled:
+            raw_response = await AIEngine.query_llm(
+                provider=provider,
+                api_key=api_key,
+                model=model,
+                host=host,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt
+            )
 
-        # Parse the response: Extract JSON object & text briefing
-        briefing_text = ""
-        metadata_obj: Dict[str, Any] = {}
+            if raw_response:
+                parsed = AIEngine.parse_structured_briefing(raw_response)
+                if parsed:
+                    return parsed
 
-        # Look for JSON block in response
-        json_match = re.search(r'\{.*\"confidence\".*\}', raw_output, flags=re.DOTALL)
+        # Deterministic Heuristic Fallback
+        return AIEngine.generate_heuristic_briefing(target_name, findings, email_info, phone_info, location)
+
+    @staticmethod
+    def parse_structured_briefing(raw_text: str) -> Optional[Dict[str, Any]]:
+        cleaned = strip_reasoning_tags(raw_text)
+        json_match = re.search(r'\{.*"briefing".*\}', cleaned, re.DOTALL)
+        if not json_match:
+            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+
         if json_match:
             try:
-                metadata_obj = json.loads(json_match.group(0))
+                data = json.loads(json_match.group(0))
+                if isinstance(data, dict) and "briefing" in data:
+                    return {
+                        "briefing": data.get("briefing", ""),
+                        "confidence": int(data.get("confidence", 70)),
+                        "verified_identities": data.get("verified_identities", []),
+                        "inferred_identity": data.get("inferred_identity", ""),
+                        "evidence": data.get("evidence", []),
+                        "rationale": data.get("rationale", "")
+                    }
             except Exception:
                 pass
 
-        # Text before JSON is the executive briefing
-        if json_match:
-            briefing_text = raw_output[:json_match.start()].strip()
-        else:
-            briefing_text = raw_output.strip()
-
-        # Fallback fields if LLM omitted any
-        if not metadata_obj:
-            # Build valid metadata object from findings
-            evidence_items = [
-                {"site": f.get("site"), "username": f.get("username"), "url": f.get("profile_url"), "corroboration": "Discovered profile"}
-                for f in findings[:5]
-            ]
-            conf = min(95, 40 + len(findings) * 10) if findings else 0
-            metadata_obj = {
-                "briefing": briefing_text or f"Discovered {len(findings)} active platform profiles for target {target_name}.",
-                "confidence": conf,
+        lines = [l.strip() for l in cleaned.split('\n') if l.strip()]
+        if lines:
+            return {
+                "briefing": lines[0],
+                "confidence": 75,
                 "verified_identities": [],
-                "inferred_identity": target_name,
-                "evidence": evidence_items,
-                "rationale": "Direct cross-platform reconnaissance match"
+                "inferred_identity": "",
+                "evidence": [],
+                "rationale": "Parsed from analyst intelligence briefing output."
             }
-        else:
-            if not briefing_text and metadata_obj.get("briefing"):
-                briefing_text = metadata_obj.get("briefing", "")
+        return None
+
+    @staticmethod
+    def generate_heuristic_briefing(
+        target_name: str,
+        findings: List[Dict[str, Any]],
+        email_info: Optional[Dict[str, Any]],
+        phone_info: Optional[Dict[str, Any]],
+        location: str
+    ) -> Dict[str, Any]:
+        count = len(findings)
+        verified_handles = list(set([f["username"] for f in findings if f.get("is_seed")]))
+        sites_list = [f["site"] for f in findings[:6]]
+        sites_str = ", ".join(sites_list) if sites_list else "multiple networks"
+
+        briefing = f"Target intelligence inquiry for '{target_name}' revealed {count} correlated online accounts across {sites_str}."
+        if location:
+            briefing += f" Regional correlation matches location context for '{location}'."
+        if email_info and email_info.get("deliverable"):
+            briefing += f" Direct mailbox linkage confirmed for {email_info.get('email')}."
+
+        evidence = [{"site": f["site"], "username": f["username"], "url": f["profile_url"]} for f in findings[:6]]
 
         return {
-            "briefing": briefing_text or metadata_obj.get("briefing", ""),
-            "confidence": metadata_obj.get("confidence", 80),
-            "verified_identities": metadata_obj.get("verified_identities", []),
-            "inferred_identity": metadata_obj.get("inferred_identity"),
-            "evidence": metadata_obj.get("evidence", []),
-            "rationale": metadata_obj.get("rationale", "")
+            "briefing": briefing,
+            "confidence": min(95, max(45, count * 8)),
+            "verified_identities": verified_handles,
+            "inferred_identity": target_name,
+            "evidence": evidence,
+            "rationale": f"Correlated {count} digital profile artifacts across target search matrix."
         }

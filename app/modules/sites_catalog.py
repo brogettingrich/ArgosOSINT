@@ -244,7 +244,8 @@ SITES_CATALOG: List[Dict[str, Any]] = [
     },
     {
         "name": "Bandcamp", "category": "Media",
-        "url_template": "https://bandcamp.com/{}",
+        "url_template": "https://{}.bandcamp.com",
+        "profile_url": "https://{}.bandcamp.com",
         "check_type": "status_code",
         "error_code": 404
     },

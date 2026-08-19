@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#000000">
+  <meta name="theme-color" content="#080a0f">
   <title>ArgosOSINT | Multi-Target Reconnaissance</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/static/css/main.css">
@@ -44,19 +44,19 @@
           <div class="grid-inputs">
             <div class="input-group">
               <label class="input-label">Username / Handle</label>
-              <input type="text" id="input-username" class="form-input" placeholder="">
+              <input type="text" id="input-username" class="form-input" placeholder="e.g. jdoe">
             </div>
             <div class="input-group">
-              <label class="input-label">Known Names / Aliases (Comma-Separated)</label>
-              <input type="text" id="input-name" class="form-input" placeholder="">
+              <label class="input-label">Known Names / Aliases</label>
+              <input type="text" id="input-name" class="form-input" placeholder="e.g. John Doe">
             </div>
             <div class="input-group">
               <label class="input-label">Location / Country (Optional)</label>
-              <input type="text" id="input-location" class="form-input" placeholder="">
+              <input type="text" id="input-location" class="form-input" placeholder="e.g. New Zealand">
             </div>
             <div class="input-group">
               <label class="input-label">Phone Number (Optional)</label>
-              <input type="text" id="input-phone" class="form-input" placeholder="">
+              <input type="text" id="input-phone" class="form-input" placeholder="+1234567890">
             </div>
             <div class="input-group">
               <label class="input-label">Email Address (Optional)</label>
@@ -66,19 +66,17 @@
 
           <div class="permutation-bar" id="permutation-preview-bar"></div>
 
-          <!-- Permutations & Dynamic Collision Toggles -->
           <div class="options-row">
             <div style="display:flex;flex-direction:column;gap:8px;">
               <label class="checkbox-label">
                 <input type="checkbox" id="chk-fuzzy" checked>
-                <span>Enable Permutation Generation (Syllable decomposition, country suffix, letter doubling)</span>
+                <span>Enable Permutation Generation (Syllables, country suffix, separators)</span>
               </label>
 
-              <!-- Offline-only Systematic Digit Collision Toggle -->
               <div id="offline-digit-container" style="display:none;margin-left:22px;">
                 <label class="checkbox-label" style="color:var(--status-warn);">
                   <input type="checkbox" id="chk-digits" checked>
-                  <span>Enable Systematic Digit Collisions (e.g. handle1, handle2, handle3, handle99)</span>
+                  <span>Enable Systematic Digit Collisions (handle1, handle2, handle99)</span>
                 </label>
               </div>
             </div>
@@ -104,7 +102,7 @@
         </div>
       </div>
 
-      <!-- Enhanced AI Executive Intelligence Briefing Card -->
+      <!-- AI Executive Intelligence Briefing Card -->
       <div id="ai-briefing-card" class="briefing-card" style="display:none;">
         <div class="briefing-header">
           <div style="display:flex;align-items:center;gap:10px;">
@@ -139,18 +137,36 @@
         <button class="filter-chip" data-filter="Media">Media</button>
       </div>
 
-      <!-- Dynamic Sub-Platform Filter Bar -->
+      <!-- Sub-Platform Filter Bar -->
       <div class="sub-filter-row" id="sub-filter-row" style="display:none;"></div>
 
       <div class="results-grid" id="results-grid"></div>
     </section>
 
-    <!-- VIEW: RELATIONSHIP GRAPH -->
-    <section id="view-graph" class="view-section" style="display: none;">
-      <div class="card-header-row">
-        <div class="card-title">Interactive Target Relationship Graph</div>
-        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">FORCE_DIRECTED_PHYSICS</div>
+    <!-- VIEW: RELATIONSHIP GRAPH (Full-Window Interactive Canvas) -->
+    <section id="view-graph" class="view-section" style="display: none; height: calc(100vh - 100px);">
+      <div class="graph-toolbar">
+        <div class="graph-filter-chips" id="graph-category-filters">
+          <button class="filter-chip active" data-graph-cat="all">All Entities</button>
+          <button class="filter-chip" data-graph-cat="Social">Social</button>
+          <button class="filter-chip" data-graph-cat="Developer">Developer</button>
+          <button class="filter-chip" data-graph-cat="Gaming">Gaming</button>
+          <button class="filter-chip" data-graph-cat="Media">Media</button>
+          <button class="filter-chip" data-graph-cat="exact">Exact Matches</button>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <input type="text" id="graph-search-input" class="form-input" placeholder="Search node in graph..." style="padding: 5px 12px; font-size: 11px; width: 190px;">
+          <button id="btn-graph-zoom-in" class="btn-graph-action" title="Zoom In">+</button>
+          <button id="btn-graph-zoom-out" class="btn-graph-action" title="Zoom Out">-</button>
+          <button id="btn-graph-recenter" class="btn-graph-action" title="Reset View / Center">Center</button>
+          <button id="btn-graph-freeze" class="btn-graph-action" title="Freeze / Unfreeze Layout">Freeze</button>
+        </div>
       </div>
+
+      <!-- Graph Sub-Platform Filter Bar -->
+      <div class="sub-filter-row" id="graph-platform-sub-filters" style="display: none; margin-top: 4px; margin-bottom: 6px;"></div>
+
       <div class="graph-container">
         <canvas id="graphCanvas"></canvas>
       </div>
@@ -201,7 +217,13 @@
         </div>
 
         <div id="group-ollama-host" class="input-group" style="margin-bottom: 14px; display: none;">
-          <label class="input-label">Local Host Endpoint URL</label>
+          <label class="input-label">Local Host Endpoint Preset / URL</label>
+          <select id="setting-host-preset" class="form-input" style="margin-bottom: 6px;">
+            <option value="http://127.0.0.1:11434">Ollama Default (http://127.0.0.1:11434)</option>
+            <option value="http://127.0.0.1:1234">LM Studio Default (http://127.0.0.1:1234)</option>
+            <option value="http://127.0.0.1:8080">llama.cpp Server (http://127.0.0.1:8080)</option>
+            <option value="custom">Custom URL...</option>
+          </select>
           <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434" placeholder="e.g. http://127.0.0.1:11434">
         </div>
 
