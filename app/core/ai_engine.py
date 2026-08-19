@@ -7,11 +7,49 @@ from typing import Dict, Any, List, Optional
 logger = logging.getLogger("ArgosAI")
 
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 DEFAULT_LOCAL_HOST = "http://127.0.0.1:11434"
 DEFAULT_LOCAL_MODEL = "llama3.2"
 
 class AIEngine:
+    @staticmethod
+    async def fetch_live_groq_models(api_key: str) -> List[Dict[str, str]]:
+        clean_key = (api_key or "").strip().strip('"').strip("'")
+        if not clean_key:
+            return []
+        try:
+            headers = {"Authorization": f"Bearer {clean_key}"}
+            async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
+                resp = await client.get(GROQ_MODELS_URL, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    models_data = data.get("data", [])
+                    # Filter for active chat/instruct models
+                    chat_models = []
+                    for m in models_data:
+                        mid = m.get("id", "")
+                        # Ignore guard, whisper, or embeddings
+                        if any(x in mid.lower() for x in ["guard", "whisper", "embed", "vision", "preview", "scout", "maverick"]):
+                            continue
+                        if mid.startswith("llama-") or mid.startswith("llama3-") or mid.startswith("mixtral") or mid.startswith("qwen"):
+                            chat_models.append({"id": mid, "name": mid})
+                    
+                    # Sort prioritizing 8B instant, then 70B versatile
+                    def sort_key(item):
+                        mid = item["id"]
+                        if "3.1-8b-instant" in mid: return 0
+                        if "3.3-70b-versatile" in mid: return 1
+                        if "3.1-8b" in mid: return 2
+                        if "3-70b" in mid: return 3
+                        return 10
+                    
+                    chat_models.sort(key=sort_key)
+                    return chat_models
+        except Exception as e:
+            logger.warning(f"Failed to fetch live Groq models: {e}")
+        return []
+
     @staticmethod
     async def test_connection(provider: str, api_key: str = "", model: str = "", host: str = "") -> Dict[str, Any]:
         try:
@@ -22,7 +60,7 @@ class AIEngine:
 
                 clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
                 if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b", "gemma2-9b-it"]:
-                    clean_model = "llama-3.1-8b-instant"
+                    clean_model = DEFAULT_GROQ_MODEL
 
                 headers = {
                     "Authorization": f"Bearer {clean_key}",
@@ -51,6 +89,7 @@ class AIEngine:
                 clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
 
                 async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+                    # 1. Test Ollama native
                     try:
                         r_ollama = await client.get(f"{clean_host}/api/tags", timeout=3.0)
                         if r_ollama.status_code == 200:
@@ -58,6 +97,7 @@ class AIEngine:
                     except Exception:
                         pass
 
+                    # 2. Test Local OpenAI endpoint
                     try:
                         r_openai = await client.get(f"{clean_host}/v1/models", timeout=3.0)
                         if r_openai.status_code in [200, 401]:
@@ -65,7 +105,11 @@ class AIEngine:
                     except Exception:
                         pass
 
-                    return {"success": False, "status": "offline", "error": f"Local AI server at {clean_host} unreachable"}
+                    return {
+                        "success": False, 
+                        "status": "offline", 
+                        "error": f"Local server at {clean_host} unreachable. Make sure Ollama or LM Studio is running, or switch to Groq Cloud API."
+                    }
 
             return {"success": False, "status": "error", "error": f"Unknown provider: {provider}"}
         except Exception as e:
@@ -81,7 +125,7 @@ class AIEngine:
 
                 clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
                 if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b", "gemma2-9b-it"]:
-                    clean_model = "llama-3.1-8b-instant"
+                    clean_model = DEFAULT_GROQ_MODEL
 
                 headers = {
                     "Authorization": f"Bearer {clean_key}",
@@ -103,7 +147,6 @@ class AIEngine:
                         data = resp.json()
                         return data["choices"][0]["message"]["content"].strip()
                     
-                    # Auto retry with default model if model error
                     if resp.status_code in [400, 404] and clean_model != DEFAULT_GROQ_MODEL:
                         payload["model"] = DEFAULT_GROQ_MODEL
                         resp_fb = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
@@ -128,6 +171,22 @@ class AIEngine:
                         r_ollama = await client.post(f"{clean_host}/api/chat", json=ollama_payload)
                         if r_ollama.status_code == 200:
                             return r_ollama.json().get("message", {}).get("content", "").strip()
+                    except Exception:
+                        pass
+
+                    try:
+                        openai_payload = {
+                            "model": clean_model,
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            "temperature": temperature,
+                            "max_tokens": 800
+                        }
+                        r_openai = await client.post(f"{clean_host}/v1/chat/completions", json=openai_payload)
+                        if r_openai.status_code == 200:
+                            return r_openai.json()["choices"][0]["message"]["content"].strip()
                     except Exception:
                         pass
 

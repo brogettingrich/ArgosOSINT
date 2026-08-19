@@ -17,7 +17,7 @@ LEET_MAP = {
 }
 
 COUNTRY_CODES = {
-    "israel": "il", "il": "il", "israel": "il",
+    "israel": "il", "il": "il",
     "usa": "us", "us": "us", "united states": "us", "america": "us",
     "uk": "uk", "united kingdom": "uk", "great britain": "uk", "england": "uk",
     "canada": "ca", "ca": "ca",
@@ -57,7 +57,7 @@ def generate_permutations(
     real_names: str = "", 
     location: str = "", 
     max_variations: int = 50, 
-    include_digits: bool = False
+    include_digits: bool = True
 ) -> List[Dict[str, Any]]:
     seed_clean = clean_username(seed)
     if not seed_clean:
@@ -143,7 +143,7 @@ def generate_permutations(
         add_var(seed_clean.replace('_', ''), "remove_underscores", priority=2)
 
     # 6. Word-boundary elongation (e.g. account_loading -> account_loadingg, accountt_loading)
-    parts = re.split(r'([._\\-])', seed_clean)
+    parts = re.split(r'([._\-])', seed_clean)
     if len(parts) > 1:
         first_word = parts[0]
         if first_word and first_word[-1].isalpha():

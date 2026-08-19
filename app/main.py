@@ -32,7 +32,7 @@ class ScanRequest(BaseModel):
     real_name: Optional[str] = None
     location: Optional[str] = None
     enable_fuzzy: bool = False
-    include_digits: bool = False
+    include_digits: bool = True
     max_permutations: int = 35
 
 class SettingsPayload(BaseModel):
@@ -73,6 +73,12 @@ async def save_settings(payload: SettingsPayload):
     repo.set_setting("ai_host", payload.ai_host.strip() or DEFAULT_LOCAL_HOST)
     repo.set_setting("enable_ai", "true" if payload.enable_ai else "false")
     return {"success": True, "message": "Settings saved successfully"}
+
+@app.get("/api/models/live")
+async def get_live_groq_models(key: Optional[str] = None):
+    api_key = key or repo.get_setting("ai_api_key", "")
+    models = await AIEngine.fetch_live_groq_models(api_key)
+    return {"models": models}
 
 @app.get("/api/settings/health")
 async def check_ai_health():
@@ -149,7 +155,7 @@ async def sse_scan_stream(
     real_name: Optional[str] = None,
     location: Optional[str] = None,
     fuzzy: bool = False,
-    digits: bool = False,
+    digits: bool = True,
     max_perms: int = 35
 ):
     target_label = username or email or phone or "Target"
@@ -188,7 +194,7 @@ async def sse_scan_stream(
                 real_names=real_name or "",
                 location=location or "",
                 max_variations=max_perms,
-                include_digits=digits or True
+                include_digits=digits
             )
             for p in context_perms:
                 if p["username"] not in usernames_to_probe:

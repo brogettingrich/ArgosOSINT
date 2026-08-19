@@ -7,14 +7,12 @@ let activeCategoryFilter = 'all';
 let activePlatformFilter = 'all';
 let isAIOnline = false;
 
-// Exactly 3 verified active models for Groq (Zero decommissioned models)
-const GROQ_MODELS = [
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Primary - Ultra-Fast)' },
+const FALLBACK_GROQ_MODELS = [
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Primary - 800+ tok/s)' },
   { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Secondary - Deep Reasoning)' },
   { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (Fallback)' }
 ];
 
-// Exactly 3 verified models for Local AI
 const LOCAL_MODELS = [
   { id: 'llama3.2', name: 'Llama 3.2 (Primary)' },
   { id: 'llama3.1', name: 'Llama 3.1 (Secondary)' },
@@ -148,13 +146,13 @@ async function checkAIHealth() {
 
     if (res.online) {
       if (collisionBadge) {
-        collisionBadge.innerText = `AI COLLISION DETECTION: ACTIVE (${res.provider.toUpperCase()})`;
+        collisionBadge.innerText = `AI REASONING & CONTEXT ENGINE: ACTIVE (${res.provider.toUpperCase()})`;
         collisionBadge.style.color = 'var(--status-found)';
       }
       if (offlineDigitContainer) offlineDigitContainer.style.display = 'none';
     } else {
       if (collisionBadge) {
-        collisionBadge.innerText = 'CONTEXT & COLLISION ENGINE: ACTIVE (LOCAL MATRIX)';
+        collisionBadge.innerText = 'CONTEXT & SYLLABLE MATRIX: ACTIVE (LOCAL CORE)';
         collisionBadge.style.color = 'var(--status-searching)';
       }
       if (offlineDigitContainer) offlineDigitContainer.style.display = 'block';
@@ -196,28 +194,44 @@ async function setupSettingsModal() {
   const testBtn = document.getElementById('btn-test-ai');
   const testStatus = document.getElementById('test-status-box');
 
-  const populateModelList = (provider, currentVal) => {
-    const list = (provider === 'groq') ? GROQ_MODELS : LOCAL_MODELS;
-    modelSelect.innerHTML = list.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+  const populateModels = async (provider, chosenModel) => {
+    if (provider === 'groq') {
+      const enteredKey = keyInput.value.trim();
+      let liveList = [];
+      if (enteredKey) {
+        try {
+          const r = await fetch(`/api/models/live?key=${encodeURIComponent(enteredKey)}`).then(x => x.json());
+          if (r.models && r.models.length > 0) {
+            liveList = r.models;
+          }
+        } catch (e) {}
+      }
+      
+      const modelsToUse = liveList.length > 0 ? liveList : FALLBACK_GROQ_MODELS;
+      modelSelect.innerHTML = modelsToUse.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
 
-    let target = currentVal || list[0].id;
-    if (['llama-3.1-70b-versatile', 'llama-3.1-70b', 'gemma2-9b-it'].includes(target)) {
-      target = 'llama-3.1-8b-instant';
+      let target = chosenModel || modelsToUse[0].id;
+      if (['llama-3.1-70b-versatile', 'llama-3.1-70b', 'gemma2-9b-it'].includes(target)) {
+        target = modelsToUse[0].id;
+      }
+      const matched = modelsToUse.find(m => m.id === target);
+      modelSelect.value = matched ? target : modelsToUse[0].id;
+    } else {
+      modelSelect.innerHTML = LOCAL_MODELS.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+      const matched = LOCAL_MODELS.find(m => m.id === chosenModel);
+      modelSelect.value = matched ? chosenModel : LOCAL_MODELS[0].id;
     }
-
-    const matched = list.find(m => m.id === target);
-    modelSelect.value = matched ? target : list[0].id;
   };
 
   const updateVisibility = () => {
     if (providerSelect.value === 'groq') {
       groupKey.style.display = 'flex';
       groupHost.style.display = 'none';
-      populateModelList('groq', modelSelect.value);
+      populateModels('groq', modelSelect.value);
     } else {
       groupKey.style.display = 'none';
       groupHost.style.display = 'flex';
-      populateModelList('local', modelSelect.value);
+      populateModels('local', modelSelect.value);
     }
   };
 
@@ -228,15 +242,29 @@ async function setupSettingsModal() {
     if (serverSettings.ai_api_key) keyInput.value = serverSettings.ai_api_key;
     if (serverSettings.ai_host) hostInput.value = serverSettings.ai_host;
     enableAiChk.checked = serverSettings.enable_ai !== false;
-    populateModelList(providerSelect.value, serverSettings.ai_model);
+    await populateModels(providerSelect.value, serverSettings.ai_model);
   } catch (e) {}
 
   providerSelect.addEventListener('change', updateVisibility);
   updateVisibility();
 
+  // Auto-refresh model list when user pastes an API key
+  let keyDebounce;
+  keyInput.addEventListener('input', () => {
+    clearTimeout(keyDebounce);
+    keyDebounce = setTimeout(() => {
+      if (providerSelect.value === 'groq') {
+        populateModels('groq', modelSelect.value);
+      }
+    }, 400);
+  });
+
   openBtn.addEventListener('click', () => {
     modal.style.display = 'flex';
     testStatus.style.display = 'none';
+    if (providerSelect.value === 'groq') {
+      populateModels('groq', modelSelect.value);
+    }
   });
 
   closeBtn.addEventListener('click', () => {
