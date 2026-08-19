@@ -39,12 +39,6 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "check_type": "special_api", "special_handler": "telegram"
     },
     {
-        "name": "Bluesky", "category": "Social",
-        "url_template": "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={}.bsky.social",
-        "profile_url": "https://bsky.app/profile/{}.bsky.social",
-        "check_type": "special_api", "special_handler": "bluesky"
-    },
-    {
         "name": "Snapchat", "category": "Social",
         "url_template": "https://www.snapchat.com/add/{}",
         "check_type": "special_api", "special_handler": "snapchat"

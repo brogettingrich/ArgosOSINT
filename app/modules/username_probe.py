@@ -237,22 +237,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         result["found"] = True
                         result["metadata"] = extract_html_metadata(resp.text)
 
-                # 7. BLUESKY PROBE
-                elif special_handler == "bluesky":
-                    bsky_api = f"https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={u_clean}.bsky.social"
-                    resp = await client.get(bsky_api, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
-                    result["status_code"] = resp.status_code
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data.get("handle"):
-                            result["found"] = True
-                            result["metadata"] = {
-                                "display_name": data.get("displayName"),
-                                "bio": data.get("description"),
-                                "avatar_url": data.get("avatar")
-                            }
-
-                # 8. GITHUB API PROBE
+                # 7. GITHUB API PROBE
                 elif special_handler == "github":
                     gh_url = f"https://api.github.com/users/{u_clean}"
                     resp = await client.get(gh_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
