@@ -68,9 +68,10 @@ def save_scan_result(dossier_id: str, result: Dict[str, Any]):
         try:
             cursor = conn.cursor()
             corrob = result.get("corroboration", {})
+            meta = result.get("metadata", {})
             cursor.execute("""
-            INSERT INTO scan_results (dossier_id, site, category, username, profile_url, found, status_code, latency_ms, corroboration_score, evidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO scan_results (dossier_id, site, category, username, profile_url, found, status_code, latency_ms, corroboration_score, evidence, display_name, bio, avatar_url, avatar_hash, verified, is_seed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 dossier_id,
                 result.get("site", ""),
@@ -78,10 +79,16 @@ def save_scan_result(dossier_id: str, result: Dict[str, Any]):
                 result.get("username", ""),
                 result.get("profile_url", ""),
                 1 if result.get("found") else 0,
-                result.get("status_code", 200),
+                result.get("status_code", 0),
                 result.get("latency_ms", 0),
-                corrob.get("score", 50),
-                json.dumps(result.get("metadata", {}))
+                corrob.get("score", 0),
+                json.dumps(meta),
+                meta.get("display_name"),
+                meta.get("bio"),
+                meta.get("avatar_url"),
+                meta.get("avatar_hash"),
+                1 if meta.get("is_verified") else 0,
+                1 if result.get("is_seed") else 0
             ))
             conn.commit()
         finally:
@@ -96,7 +103,7 @@ def get_dossier_details(dossier_id: str) -> Optional[Dict[str, Any]]:
         row = cursor.fetchone()
         if not row:
             return None
-        cursor.execute("SELECT site, category, username, profile_url, found, status_code, latency_ms, corroboration_score, evidence, created_at FROM scan_results WHERE dossier_id = ?", (dossier_id,))
+        cursor.execute("SELECT site, category, username, profile_url, found, status_code, latency_ms, corroboration_score, evidence, display_name, bio, avatar_url, avatar_hash, verified, is_seed, created_at FROM scan_results WHERE dossier_id = ?", (dossier_id,))
         results = []
         for r in cursor.fetchall():
             results.append({
@@ -109,7 +116,13 @@ def get_dossier_details(dossier_id: str) -> Optional[Dict[str, Any]]:
                 "latency_ms": r[6],
                 "corroboration": {"score": r[7]},
                 "evidence": r[8],
-                "created_at": r[9]
+                "display_name": r[9],
+                "bio": r[10],
+                "avatar_url": r[11],
+                "avatar_hash": r[12],
+                "verified": bool(r[13]),
+                "is_seed": bool(r[14]),
+                "created_at": r[15]
             })
         
         metadata = {}

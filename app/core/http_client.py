@@ -5,8 +5,12 @@ from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 from app.config import COMMON_HEADERS, REQUEST_TIMEOUT, HTTP_VERIFY, MAX_CONCURRENT_REQUESTS
 
+# Module-level semaphores are bound lazily on first use (Python 3.10+).
 DOMAIN_SEMAPHORES: Dict[str, asyncio.Semaphore] = {}
 GLOBAL_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
+# Statuses that trigger a retry (rate-limit + transient / Cloudflare 5xx family).
+RETRY_STATUSES = {408, 429, 500, 502, 503, 504, 520, 522, 524, 525, 530}
 
 def get_domain_semaphore(url: str, max_per_domain: int = 4) -> asyncio.Semaphore:
     domain = urlparse(url).netloc
@@ -33,7 +37,8 @@ async def fetch_with_retry(
     headers: Optional[Dict[str, str]] = None,
     json_body: Optional[Any] = None,
     max_retries: int = 2,
-    follow_redirects: bool = True
+    follow_redirects: bool = True,
+    timeout: Optional[float] = None
 ) -> httpx.Response:
     dom_sem = get_domain_semaphore(url)
     h = headers or COMMON_HEADERS
@@ -42,15 +47,20 @@ async def fetch_with_retry(
         async with GLOBAL_SEMAPHORE:
             async with dom_sem:
                 try:
+                    kwargs = {"headers": h, "follow_redirects": follow_redirects}
+                    if timeout is not None:
+                        kwargs["timeout"] = timeout
                     if method.upper() == "GET":
-                        resp = await client.get(url, headers=h, follow_redirects=follow_redirects)
+                        resp = await client.get(url, **kwargs)
                     elif method.upper() == "POST":
-                        resp = await client.post(url, headers=h, json=json_body, follow_redirects=follow_redirects)
+                        kwargs["json"] = json_body
+                        resp = await client.post(url, **kwargs)
                     else:
-                        resp = await client.request(method, url, headers=h, json=json_body, follow_redirects=follow_redirects)
+                        kwargs["json"] = json_body
+                        resp = await client.request(method, url, **kwargs)
 
-                    # If rate limited (429) or transient 503/504, retry with exponential backoff & jitter
-                    if resp.status_code in (429, 502, 503, 504) and attempt < max_retries:
+                    # Retry rate-limits and transient/Cloudflare-style server errors
+                    if resp.status_code in RETRY_STATUSES and attempt < max_retries:
                         backoff = (0.3 * (2 ** attempt)) + random.uniform(0.05, 0.15)
                         await asyncio.sleep(backoff)
                         continue
@@ -62,3 +72,22 @@ async def fetch_with_retry(
                         await asyncio.sleep(backoff)
                     else:
                         raise
+
+async def safe_get(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: Optional[Dict[str, str]] = None,
+    max_retries: int = 2,
+    follow_redirects: bool = True,
+    timeout: Optional[float] = None
+) -> Optional[httpx.Response]:
+    """GET wrapper that never raises - returns None when a request ultimately fails."""
+    try:
+        return await fetch_with_retry(
+            client, url, method="GET", headers=headers,
+            max_retries=max_retries, follow_redirects=follow_redirects, timeout=timeout
+        )
+    except (httpx.TimeoutException, httpx.RequestError):
+        return None
+    except Exception:
+        return None

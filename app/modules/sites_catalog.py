@@ -91,6 +91,30 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "check_type": "status_code",
         "error_code": 404
     },
+    {
+        "name": "Bluesky", "category": "Social",
+        "url_template": "https://bsky.app/profile/{}",
+        "profile_url": "https://bsky.app/profile/{}",
+        "check_type": "special_api", "special_handler": "bluesky"
+    },
+    {
+        "name": "Threads", "category": "Social",
+        "url_template": "https://www.threads.net/@{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "Mastodon", "category": "Social",
+        "url_template": "https://mastodon.social/@{}",
+        "profile_url": "https://mastodon.social/@{}",
+        "check_type": "special_api", "special_handler": "mastodon"
+    },
+    {
+        "name": "VK", "category": "Social",
+        "url_template": "https://vk.com/{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
 
     # --- DEVELOPER & TECH ---
     {
@@ -268,6 +292,28 @@ SITES_CATALOG: List[Dict[str, Any]] = [
     {
         "name": "Last.fm", "category": "Media",
         "url_template": "https://www.last.fm/user/{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "YouTube", "category": "Media",
+        "url_template": "https://www.youtube.com/@{}",
+        "check_type": "special_api", "special_handler": "youtube"
+    },
+    {
+        "name": "Medium", "category": "Media",
+        "url_template": "https://medium.com/@{}",
+        "check_type": "special_api", "special_handler": "medium"
+    },
+    {
+        "name": "Substack", "category": "Media",
+        "url_template": "https://{}.substack.com",
+        "profile_url": "https://{}.substack.com",
+        "check_type": "special_api", "special_handler": "substack"
+    },
+    {
+        "name": "Rumble", "category": "Media",
+        "url_template": "https://rumble.com/user/{}",
         "check_type": "status_code",
         "error_code": 404
     },

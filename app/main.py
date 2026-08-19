@@ -32,12 +32,13 @@ async def get_permutations_endpoint(payload: dict):
     username = payload.get("username", "").strip()
     known_names = payload.get("known_names", [])
     location = payload.get("location", "").strip()
+    enable_digit_collisions = bool(payload.get("enable_digit_collisions", False))
 
     perms = generate_permutations(
         seed_username=username,
         known_names=known_names,
         location=location,
-        enable_digit_collisions=False
+        enable_digit_collisions=enable_digit_collisions
     )
     return {"permutations": perms, "count": len(perms)}
 
@@ -48,7 +49,8 @@ async def scan_stream_endpoint(
     location: str = "",
     email: str = "",
     phone: str = "",
-    enable_permutations: bool = True
+    enable_permutations: bool = True,
+    enable_digit_collisions: bool = False
 ):
     async def event_generator():
         target_name = username or (known_names.split(',')[0].strip() if known_names else email) or "Anonymous Target"
@@ -79,7 +81,7 @@ async def scan_stream_endpoint(
             seed_username=username,
             known_names=names_list,
             location=location,
-            enable_digit_collisions=False
+            enable_digit_collisions=enable_digit_collisions
         )
         exact_seeds = [p["username"] for p in perms if p.get("is_seed")]
         secondary_perms = [p["username"] for p in perms if not p.get("is_seed")] if enable_permutations else []
@@ -220,3 +222,10 @@ async def get_live_models_endpoint(key: str = ""):
 @app.get("/api/history")
 async def get_history_endpoint():
     return repo.get_all_dossiers()
+
+@app.get("/api/dossiers/{dossier_id}")
+async def get_dossier_details_endpoint(dossier_id: str):
+    details = repo.get_dossier_details(dossier_id)
+    if details is None:
+        return {"error": "Dossier not found"}
+    return details

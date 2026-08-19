@@ -71,7 +71,9 @@ def score_profile_corroboration(
         score += 10
         factors.append("Outbound social cross-links present (+10)")
 
-    score = min(100, max(20, score))
+    # No artificial floor - a found profile with zero corroborating signals
+    # should honestly score near 0 rather than always being inflated to 20.
+    score = min(100, score)
 
     if score >= 85:
         verdict = "CONFIRMED IDENTITY"

@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupGraphControls();
   setupDismissControls();
   setupSettingsModal();
+  setupExportControls();
   initLiveHealthCheck();
 });
 
@@ -522,6 +523,7 @@ function startReconScan() {
   const email = document.getElementById('input-email').value.trim();
   const phone = document.getElementById('input-phone').value.trim();
   const enable_permutations = document.getElementById('chk-fuzzy').checked;
+  const enable_digit_collisions = document.getElementById('chk-digit-collisions') ? document.getElementById('chk-digit-collisions').checked : false;
 
   if (!username && !email && !phone && !known_names) {
     alert('Please provide at least a Username, Name, Email, or Phone Number to begin.');
@@ -556,7 +558,8 @@ function startReconScan() {
     location,
     email,
     phone,
-    enable_permutations: enable_permutations ? 'true' : 'false'
+    enable_permutations: enable_permutations ? 'true' : 'false',
+    enable_digit_collisions: enable_digit_collisions ? 'true' : 'false'
   });
 
   if (currentEventSource) currentEventSource.close();
@@ -664,6 +667,14 @@ function startReconScan() {
 function renderFindingsGrid() {
   const grid = document.getElementById('results-grid');
   grid.innerHTML = '';
+
+  const hasData = currentFindings.length > 0 ||
+    (currentEmailInfo && currentEmailInfo.valid_syntax) ||
+    (currentPhoneInfo && currentPhoneInfo.valid);
+  const jsonBtn = document.getElementById('btn-export-json');
+  const htmlBtn = document.getElementById('btn-export-html');
+  if (jsonBtn) jsonBtn.style.display = hasData ? 'inline-block' : 'none';
+  if (htmlBtn) htmlBtn.style.display = hasData ? 'inline-block' : 'none';
 
   if (currentEmailInfo && currentEmailInfo.valid_syntax && (activeCategoryFilter === 'all' || activeCategoryFilter === 'exact')) {
     addEmailCard(currentEmailInfo);
@@ -830,6 +841,15 @@ function addEmailCard(emailData) {
   const card = document.createElement('div');
   card.className = 'target-card';
 
+  const gravatarLine = emailData.gravatar && emailData.gravatar.exists ? `
+    <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+      <img src="${emailData.gravatar.avatar_url}" width="28" height="28" style="border-radius:50%;border:1px solid var(--border-color);" onerror="this.style.display='none';">
+      <span style="color:var(--text-muted);font-size:11px;">Gravatar: <strong>${emailData.gravatar.display_name || 'Profile attached'}</strong>
+        ${emailData.gravatar.profile_url ? `<a href="${emailData.gravatar.profile_url}" target="_blank" rel="noopener noreferrer" style="color:var(--status-found);"> [↗]</a>` : ''}
+      </span>
+    </div>
+  ` : '';
+
   card.innerHTML = `
     <div class="card-top">
       <span class="platform-name">Email Intelligence</span>
@@ -838,9 +858,11 @@ function addEmailCard(emailData) {
     <div style="font-size:14px;font-weight:600;color:var(--status-searching);">${emailData.email}</div>
     <div class="profile-bio-box">
       <div>Domain: <strong>${emailData.domain}</strong></div>
-      <div>MX Provider: <strong>${emailData.mx_provider}</strong></div>
-      <div>Deliverable: <strong>${emailData.deliverable ? 'Confirmed Active' : 'Unknown'}</strong></div>
+      <div>MX Provider: <strong>${emailData.mx_provider || 'Unknown'}</strong></div>
+      <div>Deliverable: <strong>${emailData.deliverable ? 'Confirmed Active' : (emailData.deliverable === false ? 'Not Deliverable' : 'Unknown')}</strong></div>
+      ${emailData.footprints && emailData.footprints.length ? `<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">Footprints: ${emailData.footprints.join(' • ')}</div>` : ''}
     </div>
+    ${gravatarLine}
   `;
   grid.appendChild(card);
 }
@@ -858,7 +880,10 @@ function addPhoneCard(phoneData) {
     <div style="font-size:14px;font-weight:600;color:var(--status-warn);">${phoneData.e164}</div>
     <div class="profile-bio-box">
       <div>Country: <strong>${phoneData.country || 'Unknown'} (${phoneData.iso})</strong></div>
-      <div>Format: <strong>${phoneData.intl_format}</strong></div>
+      <div>Intl Format: <strong>${phoneData.intl_format || phoneData.e164}</strong></div>
+      ${phoneData.local_format ? `<div>Local Format: <strong>${phoneData.local_format}</strong></div>` : ''}
+      ${phoneData.wa_me ? `<div>WhatsApp: <a href="${phoneData.wa_me}" target="_blank" rel="noopener noreferrer" style="color:var(--status-found);">Open Chat [↗]</a></div>` : ''}
+      ${phoneData.lookup_dorks && phoneData.lookup_dorks.length ? `<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">Dorks: ${phoneData.lookup_dorks.join(' • ')}</div>` : ''}
     </div>
   `;
   grid.appendChild(card);
@@ -877,15 +902,113 @@ async function loadHistory() {
     }
 
     tbody.innerHTML = history.map(d => `
-      <tr>
-        <td><strong>${d.target_name}</strong></td>
+      <tr class="history-row" data-id="${d.id}" style="cursor:pointer;" title="Click to load this dossier">
+        <td style="padding:10px;"><strong>${d.target_name}</strong></td>
         <td style="font-family:var(--font-mono);font-size:11px;">${d.seed_username || d.seed_email || d.seed_phone}</td>
-        <td><span class="corrob-badge">${d.confidence}%</span></td>
+        <td><span class="corrob-badge">${d.confidence || '—'}%</span></td>
         <td>${d.findings_count} Profiles</td>
         <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${d.created_at}</td>
       </tr>
     `).join('');
+
+    tbody.querySelectorAll('.history-row').forEach(row => {
+      row.addEventListener('click', () => loadDossierToView(row.dataset.id));
+    });
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--status-error);">Failed to load history.</td></tr>';
+  }
+}
+
+function setupExportControls() {
+  const jsonBtn = document.getElementById('btn-export-json');
+  const htmlBtn = document.getElementById('btn-export-html');
+
+  if (jsonBtn) {
+    jsonBtn.addEventListener('click', () => {
+      const target = document.getElementById('input-username').value ||
+        document.getElementById('input-name').value ||
+        (currentFindings[0] && currentFindings[0].username) || 'Target';
+      Exporter.exportJSON(target, currentFindings, currentEmailInfo, currentPhoneInfo, currentBriefingData);
+    });
+  }
+
+  if (htmlBtn) {
+    htmlBtn.addEventListener('click', () => {
+      const target = document.getElementById('input-username').value ||
+        document.getElementById('input-name').value ||
+        (currentFindings[0] && currentFindings[0].username) || 'Target';
+      Exporter.exportHTML(target, currentFindings, currentBriefingData);
+    });
+  }
+}
+
+async function loadDossierToView(dossierId) {
+  try {
+    const resp = await fetch(`/api/dossiers/${dossierId}`);
+    const dossier = await resp.json();
+    if (dossier.error) {
+      alert(`Dossier load failed: ${dossier.error}`);
+      return;
+    }
+
+    currentFindings = (dossier.results || [])
+      .filter(r => r.found)
+      .map(r => {
+        let meta = {};
+        try { meta = JSON.parse(r.evidence || '{}'); } catch (e) {}
+        if (r.display_name) meta.display_name = r.display_name;
+        if (r.bio) meta.bio = r.bio;
+        if (r.avatar_url) meta.avatar_url = r.avatar_url;
+        if (r.avatar_hash) meta.avatar_hash = r.avatar_hash;
+        return {
+          site: r.site,
+          category: r.category,
+          username: r.username,
+          profile_url: r.profile_url,
+          found: r.found,
+          is_seed: r.is_seed,
+          status_code: r.status_code,
+          latency_ms: r.latency_ms,
+          corroboration: r.corroboration || { score: 50, verdict: 'VERIFIED' },
+          metadata: meta
+        };
+      });
+
+    currentEmailInfo = null;
+    currentPhoneInfo = null;
+    currentBriefingData = dossier.metadata || null;
+
+    const briefingCard = document.getElementById('ai-briefing-card');
+    const briefingText = document.getElementById('briefing-text');
+    const confBadge = document.getElementById('briefing-confidence-badge');
+    if (briefingCard && briefingText && dossier.ai_briefing) {
+      briefingText.innerText = dossier.ai_briefing;
+      if (confBadge && dossier.confidence !== undefined) {
+        confBadge.innerText = `${dossier.confidence}% CONFIDENCE`;
+      }
+      briefingCard.style.display = 'block';
+    }
+
+    // Switch to the recon view
+    document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.view-section').forEach(s => s.style.display = 'none');
+    const reconView = document.getElementById('view-recon');
+    if (reconView) reconView.style.display = 'block';
+    const reconTab = document.querySelector('.nav-tab-btn[data-target="view-recon"]');
+    if (reconTab) reconTab.classList.add('active');
+
+    const findingsCount = document.getElementById('findings-count');
+    if (findingsCount) findingsCount.innerText = `${currentFindings.length} Discovered`;
+    const resetBtn = document.getElementById('btn-reset-results');
+    if (resetBtn) resetBtn.style.display = 'inline-flex';
+
+    updateSubFilterBar();
+    updateGraphSubFilterBar();
+    renderFindingsGrid();
+    if (graphVisualizer) {
+      graphVisualizer.buildFromScan(dossier.target_name, currentFindings, currentEmailInfo, currentPhoneInfo);
+    }
+  } catch (e) {
+    alert(`Failed to load dossier: ${e.message}`);
   }
 }

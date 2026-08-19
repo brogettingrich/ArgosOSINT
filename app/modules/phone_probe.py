@@ -29,6 +29,17 @@ COUNTRY_CODES = {
     "+380": {"country": "Ukraine", "iso": "UA"},
 }
 
+
+def _group_local(digits: str) -> str:
+    """Group a national number into readable chunks (right-to-left by 3)."""
+    chunks = []
+    while len(digits) > 3:
+        chunks.insert(0, digits[-3:])
+        digits = digits[:-3]
+    chunks.insert(0, digits)
+    return " ".join(chunks)
+
+
 def analyze_phone_number(raw: str) -> Dict[str, Any]:
     """
     Parses and standardizes phone number formats and maps international country codes.
@@ -41,33 +52,48 @@ def analyze_phone_number(raw: str) -> Dict[str, Any]:
             "error": "Phone number contains too few digits"
         }
 
-    formatted_plus = f"+{digits_only}" if not raw.startswith("+") else raw
+    e164 = f"+{digits_only}"
+
     detected_country = "International / Unknown"
     iso_code = "UNKNOWN"
-
+    cc_length = None
     for code, meta in sorted(COUNTRY_CODES.items(), key=lambda x: -len(x[0])):
-        if formatted_plus.startswith(code):
+        if e164.startswith(code):
             detected_country = meta["country"]
             iso_code = meta["iso"]
+            cc_length = len(code) - 1  # digits in the country code
             break
 
-    # Variations for web search dorking
-    variations = [
-        formatted_plus,
-        digits_only,
-        f"+{digits_only[:3]} {digits_only[3:6]} {digits_only[6:]}" if len(digits_only) >= 9 else formatted_plus
-    ]
+    national = digits_only[cc_length:] if cc_length else digits_only
+
+    intl_format = e164
+    if cc_length and len(national) == 10:
+        intl_format = f"{e164[:cc_length + 1]} {national[:3]} {national[3:6]} {national[6:]}"
+    elif cc_length and national:
+        intl_format = f"{e164[:cc_length + 1]} {_group_local(national)}"
+
+    local_format = ""
+    if cc_length and len(national) == 10 and e164.startswith("+1"):
+        local_format = f"({national[:3]}) {national[3:6]}-{national[6:]}"
+    elif national:
+        local_format = _group_local(national)
+
+    variations = [e164, digits_only, intl_format]
+    wa_me = f"https://wa.me/{digits_only}"
 
     return {
         "raw": raw,
         "valid": True,
-        "e164": formatted_plus,
+        "e164": e164,
+        "intl_format": intl_format,
+        "local_format": local_format,
         "digits_only": digits_only,
         "country": detected_country,
         "iso": iso_code,
-        "dork_variations": list(set(variations)),
+        "wa_me": wa_me,
+        "dork_variations": list(dict.fromkeys(variations)),
         "lookup_dorks": [
-            f'"{formatted_plus}"',
+            f'"{e164}"',
             f'"{digits_only}"',
             f'site:whatsapp.com "{digits_only}"',
             f'site:telegram.me "{digits_only}"'

@@ -1,15 +1,66 @@
+import asyncio
 import hashlib
 import re
 import httpx
-from typing import Dict, Any, List
+from typing import Dict, Any
 from app.config import COMMON_HEADERS, REQUEST_TIMEOUT, HTTP_VERIFY
 
 EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
 
+# Fallback heuristic used only when dnspython is unavailable (keeps the app
+# functional on bare installs that do not run `pip install dnspython`).
+COMMON_MAIL_PROVIDERS = {
+    "gmail.com": "Google Workspace (Gmail)",
+    "googlemail.com": "Google Workspace (Gmail)",
+    "yahoo.com": "Yahoo Mail",
+    "yahoo.co.uk": "Yahoo Mail",
+    "outlook.com": "Microsoft Outlook",
+    "hotmail.com": "Microsoft Outlook",
+    "live.com": "Microsoft Outlook",
+    "msn.com": "Microsoft Outlook",
+    "aol.com": "AOL",
+    "icloud.com": "Apple iCloud Mail",
+    "me.com": "Apple iCloud Mail",
+    "protonmail.com": "ProtonMail",
+    "proton.me": "ProtonMail",
+    "mail.com": "Mail.com",
+    "zoho.com": "Zoho Mail",
+    "yandex.com": "Yandex Mail",
+    "gmx.com": "GMX Mail",
+    "gmx.net": "GMX Mail",
+    "qq.com": "Tencent QQ Mail",
+    "163.com": "NetEase 163 Mail",
+}
+
+
+def resolve_mx_provider(domain: str):
+    """Return (mx_provider, deliverable) for a domain.
+
+    Uses dnspython when available (true DNS MX lookup); otherwise falls back to
+    a known-provider heuristic. `deliverable` is True/False when a real answer
+    exists and None when it is genuinely unknown.
+    """
+    try:
+        import dns.resolver
+        answers = dns.resolver.resolve(domain, "MX", lifetime=3)
+        mxs = sorted(answers, key=lambda r: r.preference)
+        if mxs:
+            host = str(mxs[0].exchange).rstrip(".")
+            return host, True
+        return "No MX records", False
+    except Exception:
+        pass
+
+    base = domain.lower()
+    if base in COMMON_MAIL_PROVIDERS:
+        return COMMON_MAIL_PROVIDERS[base], True
+    if base.endswith(".protonmail.com") or "protonmail" in base:
+        return "ProtonMail", True
+    return "Unknown (DNS lookup unavailable)", None
+
+
 async def probe_email_intelligence(email: str) -> Dict[str, Any]:
-    """
-    Validates email format, extracts domain, checks Gravatar avatar & GitHub footprint.
-    """
+    """Validates email format, checks MX/deliverability, Gravatar avatar & GitHub footprint."""
     clean_email = email.strip().lower()
     is_valid_format = bool(re.match(EMAIL_REGEX, clean_email))
 
@@ -28,11 +79,15 @@ async def probe_email_intelligence(email: str) -> Dict[str, Any]:
     gravatar_url = f"https://www.gravatar.com/avatar/{email_hash}?d=404"
     gravatar_profile = f"https://en.gravatar.com/{email_hash}.json"
 
+    mx_provider, deliverable = resolve_mx_provider(domain)
+
     result = {
         "email": clean_email,
         "valid_syntax": True,
         "user_part": user_part,
         "domain": domain,
+        "mx_provider": mx_provider,
+        "deliverable": deliverable,
         "gravatar": {
             "exists": False,
             "avatar_url": None,
@@ -41,11 +96,12 @@ async def probe_email_intelligence(email: str) -> Dict[str, Any]:
         },
         "footprints": []
     }
+    if mx_provider and mx_provider not in ("No MX records", "Unknown (DNS lookup unavailable)"):
+        result["footprints"].append(f"Mail exchange active ({mx_provider})")
 
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, verify=HTTP_VERIFY) as client:
         # 1. Check Gravatar Profile
         try:
-            # Retry loop for transient errors
             attempts = 2
             backoff = 0.1
             resp = None

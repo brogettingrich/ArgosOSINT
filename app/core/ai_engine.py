@@ -2,7 +2,7 @@ import os
 import json
 import re
 import httpx
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from app.config import REQUEST_TIMEOUT, HTTP_VERIFY
 from app.database import repository as repo
 
@@ -55,10 +55,14 @@ class AIEngine:
                         models = []
                         for m in data.get("data", []):
                             mid = m.get("id", "")
-                            if any(k in mid.lower() for k in ["llama", "mixtral", "gemma", "whisper"]):
+                            mid_l = mid.lower()
+                            # Filter out non-chat models (guard, whisper, vision-only, etc.)
+                            if any(bad in mid_l for bad in ["guard", "whisper", "vision", "moderation"]):
+                                continue
+                            if any(k in mid_l for k in ["llama", "mixtral", "gemma", "qwen", "deepseek"]):
                                 models.append({"id": mid, "name": mid})
                         if models:
-                            return sorted(models, key=lambda x: ("llama-3.3" not in x["id"], x["id"]))
+                            return sorted(models, key=lambda x: ("llama-3.3" not in x["id"] and "llama-3.1" not in x["id"], x["id"]))
             except Exception:
                 pass
             return GROQ_FALLBACK_MODELS

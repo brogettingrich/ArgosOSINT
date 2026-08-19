@@ -83,6 +83,11 @@
               <span>Enable Permutation Generation (Syllables, country suffix, separators)</span>
             </label>
 
+            <label class="checkbox-label" style="margin-left:8px;">
+              <input type="checkbox" id="chk-digit-collisions">
+              <span>Enable Digit-Collision Variants (user34 → user034)</span>
+            </label>
+
             <button type="submit" id="btn-start-scan" class="btn-launch-scan">
               Launch Recon Probe
             </button>
@@ -123,6 +128,8 @@
         <div style="display:flex;align-items:center;gap:12px;">
           <span id="findings-count" class="card-title">0 Discovered</span>
           <button type="button" id="btn-reset-results" class="btn-dismiss-link" style="display:none;">Reset Grid</button>
+          <button type="button" id="btn-export-json" class="btn-graph-action" style="display:none;" title="Export findings as a structured JSON dossier">Export JSON</button>
+          <button type="button" id="btn-export-html" class="btn-graph-action" style="display:none;" title="Export a printable HTML intelligence report">Export HTML</button>
         </div>
 
         <div id="filter-row" style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -265,6 +272,8 @@
   </div>
 
   <script src="/static/js/graph.js"></script>
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/export.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
