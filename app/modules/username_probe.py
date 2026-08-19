@@ -72,7 +72,6 @@ def extract_html_metadata(html_text: str) -> Dict[str, Any]:
     if not html_text or len(html_text) < 50:
         return meta
 
-    # 1. og:title
     title_match = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']', html_text, re.I)
     if not title_match:
         title_match = re.search(r'<title>(.*?)</title>', html_text, re.I)
@@ -81,7 +80,6 @@ def extract_html_metadata(html_text: str) -> Dict[str, Any]:
         if not any(c in raw_t.lower() for c in ["404", "not found", "login", "browser", "challenge", "facebook", "error"]):
             meta["display_name"] = raw_t
 
-    # 2. og:description / Bio
     desc_match = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', html_text, re.I)
     if not desc_match:
         desc_match = re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html_text, re.I)
@@ -92,27 +90,26 @@ def extract_html_metadata(html_text: str) -> Dict[str, Any]:
             meta["mentioned_handles"] = list(set(re.findall(r'@([a-zA-Z0-9._]{3,30})', bio_text)))
             meta["mentioned_emails"] = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', bio_text)))
 
-    # 3. og:image / Avatar
     img_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', html_text, re.I)
     if img_match:
         meta["avatar_url"] = img_match.group(1).strip()
 
-    # 4. Outbound links
     outbound = re.findall(r'href=["\'](https?://(?:www\.)?(?:linktr\.ee|beacons\.ai|carrd\.co|github\.com|twitter\.com|x\.com|t\.me)/[a-zA-Z0-9._/-]+)["\']', html_text, re.I)
     meta["outbound_links"] = list(set(outbound))[:5]
 
     return meta
 
 async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], username: str, seed_name: str = "") -> Dict[str, Any]:
-    url = site["url_template"].format(username)
-    profile_url = site.get("profile_url", site["url_template"]).format(username)
+    u_clean = username.strip().lstrip('@').rstrip('/').lower()
+    url = site["url_template"].format(u_clean)
+    profile_url = site.get("profile_url", site["url_template"]).format(u_clean)
     special_handler = site.get("special_handler")
 
     start_time = time.time()
     result = {
         "site": site["name"],
         "category": site.get("category", "General"),
-        "username": username,
+        "username": u_clean,
         "profile_url": profile_url,
         "found": False,
         "status_code": 0,
@@ -125,9 +122,9 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
     async with GLOBAL_SEMAPHORE:
         async with dom_sem:
             try:
-                # 1. INSTAGRAM PROBE (HTML OpenGraph Strict Validation)
+                # 1. INSTAGRAM PROBE
                 if special_handler == "instagram":
-                    insta_url = f"https://www.instagram.com/{username}/"
+                    insta_url = f"https://www.instagram.com/{u_clean}/"
                     resp = await client.get(insta_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
@@ -139,15 +136,13 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         if m_title:
                             t_clean = html.unescape(m_title.group(1)).strip()
                             t_lower = t_clean.lower()
-                            u_lower = username.lower()
 
-                            # Match handle with (@handle) or @handle or starting with handle
                             is_target_profile = (
-                                f"@{u_lower}" in t_lower or 
-                                f"({u_lower})" in t_lower or
-                                t_lower.startswith(f"{u_lower} ") or
-                                t_lower.startswith(f"{u_lower}(") or
-                                f"(@{u_lower})" in t_lower
+                                f"@{u_clean}" in t_lower or 
+                                f"({u_clean})" in t_lower or
+                                t_lower.startswith(f"{u_clean} ") or
+                                t_lower.startswith(f"{u_clean}(") or
+                                f"(@{u_clean})" in t_lower
                             )
 
                             if is_target_profile:
@@ -155,14 +150,52 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                 desc_clean = html.unescape(m_desc.group(1)).strip() if m_desc else ""
                                 result["found"] = True
                                 result["metadata"] = {
-                                    "display_name": name_part or username,
+                                    "display_name": name_part or u_clean,
                                     "bio": desc_clean,
                                     "avatar_url": m_img.group(1).strip() if m_img else None
                                 }
 
-                # 2. TIKTOK PROBE
+                # 2. SPOTIFY PROBE (Strict OpenGraph Verification)
+                elif special_handler == "spotify":
+                    sp_url = f"https://open.spotify.com/user/{u_clean}"
+                    resp = await client.get(sp_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        m_title = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']', resp.text, re.I)
+                        m_desc = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', resp.text, re.I)
+                        m_img = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', resp.text, re.I)
+                        if m_title:
+                            t = html.unescape(m_title.group(1)).strip()
+                            if t and "web player" not in t.lower() and not t.lower().startswith("spotify"):
+                                result["found"] = True
+                                result["metadata"] = {
+                                    "display_name": t,
+                                    "bio": m_desc.group(1) if m_desc else "",
+                                    "avatar_url": m_img.group(1) if m_img else None
+                                }
+
+                # 3. TWITCH PROBE (Strict Title Verification)
+                elif special_handler == "twitch":
+                    tw_url = f"https://www.twitch.tv/{u_clean}"
+                    resp = await client.get(tw_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        m_title = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']', resp.text, re.I)
+                        m_desc = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', resp.text, re.I)
+                        m_img = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', resp.text, re.I)
+                        if m_title:
+                            t = html.unescape(m_title.group(1)).strip()
+                            if u_clean in t.lower() and "twitch" in t.lower():
+                                result["found"] = True
+                                result["metadata"] = {
+                                    "display_name": t.split('-')[0].strip(),
+                                    "bio": m_desc.group(1) if m_desc else "",
+                                    "avatar_url": m_img.group(1) if m_img else None
+                                }
+
+                # 4. TIKTOK PROBE
                 elif special_handler == "tiktok":
-                    tt_url = f"https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{username}"
+                    tt_url = f"https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{u_clean}"
                     resp = await client.get(tt_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
@@ -175,18 +208,18 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                 "avatar_url": data.get("thumbnail_url")
                             }
 
-                # 3. REDDIT PROBE
+                # 5. REDDIT PROBE
                 elif special_handler == "reddit":
-                    r_url = f"https://old.reddit.com/user/{username}"
+                    r_url = f"https://old.reddit.com/user/{u_clean}"
                     resp = await client.get(r_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
                         result["found"] = True
                         result["metadata"] = extract_html_metadata(resp.text)
 
-                # 4. FACEBOOK PROBE (Name-Match Only)
+                # 6. FACEBOOK PROBE (Name Match Only)
                 elif special_handler == "facebook":
-                    fb_url = f"https://m.facebook.com/{username}"
+                    fb_url = f"https://m.facebook.com/{u_clean}"
                     h_fb = {
                         **COMMON_HEADERS,
                         "Sec-Fetch-Dest": "document",
@@ -210,7 +243,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         is_not_found = any(m in text.lower() for m in not_found_markers) or title_val.lower() in ["facebook", "log in to facebook", "error"]
 
                         if not is_not_found:
-                            if is_name_nearly_identical(title_val, seed_name, username):
+                            if is_name_nearly_identical(title_val, seed_name, u_clean):
                                 result["found"] = True
                                 intro_snippets = re.findall(r'<div[^>]*class="[^"]*intro[^"]*"[^>]*>(.*?)</div>', text, re.I)
                                 intro_clean = " • ".join([re.sub(r'<[^>]+>', '', s).strip() for s in intro_snippets if s])
@@ -231,9 +264,9 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                             else:
                                 result["found"] = False
 
-                # 5. BLUESKY PROBE
+                # 7. BLUESKY PROBE
                 elif special_handler == "bluesky":
-                    bsky_api = f"https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={username}.bsky.social"
+                    bsky_api = f"https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={u_clean}.bsky.social"
                     resp = await client.get(bsky_api, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
@@ -246,9 +279,9 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                 "avatar_url": data.get("avatar")
                             }
 
-                # 6. GITHUB API PROBE
+                # 8. GITHUB API PROBE
                 elif special_handler == "github":
-                    gh_url = f"https://api.github.com/users/{username}"
+                    gh_url = f"https://api.github.com/users/{u_clean}"
                     resp = await client.get(gh_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
@@ -261,9 +294,9 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                             "outbound_links": [data.get("blog")] if data.get("blog") else []
                         }
 
-                # 7. TELEGRAM WEB PROBE
+                # 9. TELEGRAM WEB PROBE
                 elif special_handler == "telegram":
-                    tg_url = f"https://t.me/{username}"
+                    tg_url = f"https://t.me/{u_clean}"
                     resp = await client.get(tg_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     text = resp.text
@@ -271,9 +304,9 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                         result["found"] = True
                         result["metadata"] = extract_html_metadata(text)
 
-                # 8. STEAM XML PROBE
+                # 10. STEAM XML PROBE
                 elif special_handler == "steam":
-                    steam_url = f"https://steamcommunity.com/id/{username}/?xml=1"
+                    steam_url = f"https://steamcommunity.com/id/{u_clean}/?xml=1"
                     resp = await client.get(steam_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200 and "<steamID64>" in resp.text:
@@ -284,7 +317,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                             meta["display_name"] = st_name.group(1)
                         result["metadata"] = meta
 
-                # 9. STANDARD MULTI-FACTOR VERIFICATION
+                # 11. STANDARD MULTI-FACTOR VERIFICATION
                 else:
                     resp = await client.get(url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT, follow_redirects=True)
                     result["status_code"] = resp.status_code
@@ -293,7 +326,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
 
                     is_redirect_bounce = any(
                         p in final_url for p in ["/login", "/signin", "/signup", "/register", "404", "error", "/explore"]
-                    ) and not (f"/{username.lower()}" in final_url or f"@{username.lower()}" in final_url)
+                    ) and not (f"/{u_clean}" in final_url or f"@{u_clean}" in final_url)
 
                     has_challenge_or_error = any(p in text for p in CHALLENGE_PATTERNS)
 

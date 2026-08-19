@@ -1,6 +1,5 @@
 from typing import Dict, Any, List
 
-# High-Signal, Verified Platforms with Strict Zero-False-Positive Rules
 SITES_CATALOG: List[Dict[str, Any]] = [
     # --- SOCIAL PLATFORMS ---
     {
@@ -189,8 +188,7 @@ SITES_CATALOG: List[Dict[str, Any]] = [
     {
         "name": "Twitch", "category": "Gaming",
         "url_template": "https://www.twitch.tv/{}",
-        "check_type": "status_code",
-        "error_code": 404
+        "check_type": "special_api", "special_handler": "twitch"
     },
     {
         "name": "Roblox", "category": "Gaming",
