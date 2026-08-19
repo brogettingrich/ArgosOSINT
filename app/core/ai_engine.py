@@ -8,8 +8,15 @@ logger = logging.getLogger("ArgosAI")
 
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+FALLBACK_GROQ_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.2"
+
+VERIFIED_GROQ_MODELS = [
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
+    "gemma2-9b-it"
+]
 
 class AIEngine:
     @staticmethod
@@ -21,6 +28,11 @@ class AIEngine:
                     return {"success": False, "status": "no_key", "error": "No Groq API key configured"}
                 headers = {"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"}
                 clean_model = model.strip() or DEFAULT_GROQ_MODEL
+                
+                # Sanitize deprecated model names if user had old cached string
+                if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b"]:
+                    clean_model = "llama-3.3-70b-versatile"
+                
                 payload = {
                     "model": clean_model,
                     "messages": [{"role": "user", "content": "Respond with OK"}],
@@ -59,6 +71,9 @@ class AIEngine:
                     return None
                 headers = {"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"}
                 clean_model = model.strip() or DEFAULT_GROQ_MODEL
+                if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b"]:
+                    clean_model = "llama-3.3-70b-versatile"
+
                 payload = {
                     "model": clean_model,
                     "messages": [
@@ -73,8 +88,15 @@ class AIEngine:
                     if resp.status_code == 200:
                         data = resp.json()
                         return data["choices"][0]["message"]["content"].strip()
-                    else:
-                        logger.warning(f"Groq query failed: {resp.status_code} - {resp.text}")
+                    
+                    # Auto-fallback to primary model if the requested model threw an error
+                    if resp.status_code in [400, 404] and clean_model != DEFAULT_GROQ_MODEL:
+                        logger.warning(f"Retrying with fallback model {DEFAULT_GROQ_MODEL}")
+                        payload["model"] = DEFAULT_GROQ_MODEL
+                        resp_fallback = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
+                        if resp_fallback.status_code == 200:
+                            data = resp_fallback.json()
+                            return data["choices"][0]["message"]["content"].strip()
 
             elif provider == "ollama":
                 ollama_url = (host.strip() or DEFAULT_OLLAMA_HOST).rstrip("/") + "/api/chat"

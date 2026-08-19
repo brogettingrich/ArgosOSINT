@@ -7,23 +7,18 @@ let activeCategoryFilter = 'all';
 let activePlatformFilter = 'all';
 let isAIOnline = false;
 
+// Exactly 3 verified active production models for Groq
 const GROQ_MODELS = [
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-Fast & Free - Recommended)' },
-  { id: 'llama-3.1-70b-versatile', name: 'Llama 3.1 70B Versatile (Deep Reasoning)' },
-  { id: 'llama3-70b-8192', name: 'Llama 3 70B (8192 Context)' },
-  { id: 'llama3-8b-8192', name: 'Llama 3 8B (8192 Context)' },
-  { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT' },
-  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (32k Context)' },
-  { id: 'custom', name: 'Custom Model ID (Write-In)...' }
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Primary - 800+ tok/s)' },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Secondary - Deep Reasoning)' },
+  { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT (Fallback)' }
 ];
 
+// Exactly 3 verified models for Ollama
 const OLLAMA_MODELS = [
-  { id: 'llama3.2', name: 'Llama 3.2 (Default)' },
-  { id: 'llama3.1', name: 'Llama 3.1' },
-  { id: 'mistral', name: 'Mistral 7B' },
-  { id: 'phi3', name: 'Phi-3 Mini' },
-  { id: 'qwen2.5', name: 'Qwen 2.5' },
-  { id: 'custom', name: 'Custom Model ID (Write-In)...' }
+  { id: 'llama3.2', name: 'Llama 3.2 (Primary - Default)' },
+  { id: 'llama3.1', name: 'Llama 3.1 (Secondary)' },
+  { id: 'mistral', name: 'Mistral 7B (Fallback)' }
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -193,7 +188,6 @@ async function setupSettingsModal() {
   const providerSelect = document.getElementById('setting-provider');
   const keyInput = document.getElementById('setting-api-key');
   const modelSelect = document.getElementById('setting-model-select');
-  const modelCustomInput = document.getElementById('setting-model-custom');
   const hostInput = document.getElementById('setting-host');
   const enableAiChk = document.getElementById('setting-enable-ai');
   const groupKey = document.getElementById('group-api-key');
@@ -214,17 +208,17 @@ async function setupSettingsModal() {
     const list = (provider === 'groq') ? GROQ_MODELS : OLLAMA_MODELS;
     modelSelect.innerHTML = list.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
 
-    const matched = list.find(m => m.id === selectedModel);
+    // Handle migration from old deprecated models
+    let targetModel = selectedModel;
+    if (targetModel === 'llama-3.1-70b-versatile' || targetModel === 'llama-3.1-70b') {
+      targetModel = 'llama-3.3-70b-versatile';
+    }
+
+    const matched = list.find(m => m.id === targetModel);
     if (matched) {
-      modelSelect.value = selectedModel;
-      modelCustomInput.style.display = 'none';
-    } else if (selectedModel) {
-      modelSelect.value = 'custom';
-      modelCustomInput.value = selectedModel;
-      modelCustomInput.style.display = 'block';
+      modelSelect.value = targetModel;
     } else {
       modelSelect.value = list[0].id;
-      modelCustomInput.style.display = 'none';
     }
   };
 
@@ -235,24 +229,15 @@ async function setupSettingsModal() {
 
   populateModels(providerSelect.value, currentSettings.ai_model || 'llama-3.1-8b-instant');
 
-  modelSelect.addEventListener('change', () => {
-    if (modelSelect.value === 'custom') {
-      modelCustomInput.style.display = 'block';
-      modelCustomInput.focus();
-    } else {
-      modelCustomInput.style.display = 'none';
-    }
-  });
-
   const updateVisibility = () => {
     if (providerSelect.value === 'groq') {
       groupKey.style.display = 'flex';
       groupHost.style.display = 'none';
-      populateModels('groq', modelSelect.value === 'custom' ? modelCustomInput.value : modelSelect.value);
+      populateModels('groq', modelSelect.value);
     } else {
       groupKey.style.display = 'none';
       groupHost.style.display = 'flex';
-      populateModels('ollama', modelSelect.value === 'custom' ? modelCustomInput.value : modelSelect.value);
+      populateModels('ollama', modelSelect.value);
     }
   };
 
@@ -277,10 +262,6 @@ async function setupSettingsModal() {
     }
   });
 
-  const getEffectiveModel = () => {
-    return modelSelect.value === 'custom' ? (modelCustomInput.value.trim() || 'llama-3.1-8b-instant') : modelSelect.value;
-  };
-
   testBtn.addEventListener('click', async () => {
     testStatus.style.display = 'block';
     testStatus.style.color = 'var(--text-secondary)';
@@ -289,7 +270,7 @@ async function setupSettingsModal() {
     const payload = {
       ai_provider: providerSelect.value,
       ai_api_key: keyInput.value.trim(),
-      ai_model: getEffectiveModel(),
+      ai_model: modelSelect.value,
       ai_host: hostInput.value.trim(),
       enable_ai: enableAiChk.checked
     };
@@ -311,11 +292,10 @@ async function setupSettingsModal() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const effectiveModel = getEffectiveModel();
     const payload = {
       ai_provider: providerSelect.value,
       ai_api_key: keyInput.value.trim(),
-      ai_model: effectiveModel,
+      ai_model: modelSelect.value,
       ai_host: hostInput.value.trim(),
       enable_ai: enableAiChk.checked
     };
