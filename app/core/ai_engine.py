@@ -18,11 +18,11 @@ class AIEngine:
             if provider == "groq":
                 clean_key = (api_key or "").strip().strip('"').strip("'")
                 if not clean_key:
-                    return {"success": False, "status": "no_key", "error": "Groq API Key is required"}
+                    return {"success": False, "status": "no_key", "error": "Groq API Key is required (starts with gsk_...)"}
 
                 clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
-                if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b"]:
-                    clean_model = "llama-3.3-70b-versatile"
+                if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b", "gemma2-9b-it"]:
+                    clean_model = "llama-3.1-8b-instant"
 
                 headers = {
                     "Authorization": f"Bearer {clean_key}",
@@ -51,7 +51,6 @@ class AIEngine:
                 clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
 
                 async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-                    # 1. Try standard Ollama native API
                     try:
                         r_ollama = await client.get(f"{clean_host}/api/tags", timeout=3.0)
                         if r_ollama.status_code == 200:
@@ -59,7 +58,6 @@ class AIEngine:
                     except Exception:
                         pass
 
-                    # 2. Try OpenAI-compatible local endpoints (LM Studio, EnclaveLM, vLLM, LocalAI)
                     try:
                         r_openai = await client.get(f"{clean_host}/v1/models", timeout=3.0)
                         if r_openai.status_code in [200, 401]:
@@ -67,15 +65,7 @@ class AIEngine:
                     except Exception:
                         pass
 
-                    # 3. Try standard root ping
-                    try:
-                        r_root = await client.get(clean_host, timeout=3.0)
-                        if r_root.status_code < 500:
-                            return {"success": True, "status": "online", "message": f"Local AI Host Reachable ({clean_model})"}
-                    except Exception as e:
-                        return {"success": False, "status": "offline", "error": f"Cannot connect to {clean_host}: {type(e).__name__}"}
-
-                    return {"success": False, "status": "offline", "error": f"Local AI at {clean_host} returned no response"}
+                    return {"success": False, "status": "offline", "error": f"Local AI server at {clean_host} unreachable"}
 
             return {"success": False, "status": "error", "error": f"Unknown provider: {provider}"}
         except Exception as e:
@@ -90,8 +80,8 @@ class AIEngine:
                     return None
 
                 clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
-                if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b"]:
-                    clean_model = "llama-3.3-70b-versatile"
+                if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b", "gemma2-9b-it"]:
+                    clean_model = "llama-3.1-8b-instant"
 
                 headers = {
                     "Authorization": f"Bearer {clean_key}",
@@ -113,21 +103,18 @@ class AIEngine:
                         data = resp.json()
                         return data["choices"][0]["message"]["content"].strip()
                     
-                    # Auto fallback to primary 8B model if error
+                    # Auto retry with default model if model error
                     if resp.status_code in [400, 404] and clean_model != DEFAULT_GROQ_MODEL:
-                        logger.warning(f"Retrying with fallback model {DEFAULT_GROQ_MODEL}")
                         payload["model"] = DEFAULT_GROQ_MODEL
-                        resp_fallback = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
-                        if resp_fallback.status_code == 200:
-                            data = resp_fallback.json()
-                            return data["choices"][0]["message"]["content"].strip()
+                        resp_fb = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
+                        if resp_fb.status_code == 200:
+                            return resp_fb.json()["choices"][0]["message"]["content"].strip()
 
             elif provider in ["ollama", "local"]:
                 clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
                 clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
 
                 async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
-                    # 1. Try Ollama native chat endpoint
                     try:
                         ollama_payload = {
                             "model": clean_model,
@@ -140,26 +127,7 @@ class AIEngine:
                         }
                         r_ollama = await client.post(f"{clean_host}/api/chat", json=ollama_payload)
                         if r_ollama.status_code == 200:
-                            data = r_ollama.json()
-                            return data.get("message", {}).get("content", "").strip()
-                    except Exception:
-                        pass
-
-                    # 2. Try OpenAI-compatible local chat endpoint (/v1/chat/completions)
-                    try:
-                        openai_payload = {
-                            "model": clean_model,
-                            "messages": [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt}
-                            ],
-                            "temperature": temperature,
-                            "max_tokens": 800
-                        }
-                        r_openai = await client.post(f"{clean_host}/v1/chat/completions", json=openai_payload)
-                        if r_openai.status_code == 200:
-                            data = r_openai.json()
-                            return data["choices"][0]["message"]["content"].strip()
+                            return r_ollama.json().get("message", {}).get("content", "").strip()
                     except Exception:
                         pass
 
@@ -177,10 +145,11 @@ class AIEngine:
         system_prompt = (
             "You are an expert OSINT pseudonym, syllable analysis, and collision intelligence generator. "
             "Analyze the target username, real name(s), location, and context clues. "
-            "Identify first and last names, syllable boundaries, cultural country suffixes (e.g. _il, _uk, _us), "
+            "Identify first and last names, syllable boundaries, cultural country suffixes (e.g. _il, _uk, _us, _de), "
             "and human username collision fallbacks (e.g. appending single digits like 1, 2, 3, 7, 01 or separator swaps like . vs _ vs -). "
-            "For multi-word handles like 'account_loading', include variants like 'account.loading', 'account.loading3', 'account_loading1', 'account_loading_3', 'accountloading'. "
-            "Output ONLY a raw JSON array of 12 to 20 high-probability username permutations (lowercase, alphanumeric with dots/underscores/hyphens). "
+            "For names like 'ozalmagor' + Israel, include variants like 'oz_almagor', 'oz.almagor', 'almagor_oz', 'ozalmagor_il', 'oz_almagor_il', 'o_almagor'. "
+            "For handles like 'account_loading', include 'account.loading', 'account.loading3', 'account_loading3', 'accountloading'. "
+            "Output ONLY a raw JSON array of 15 to 25 high-probability username permutations (lowercase, alphanumeric with dots/underscores/hyphens). "
             "Do not include markdown fences or explanation. Output ONLY the JSON array."
         )
 

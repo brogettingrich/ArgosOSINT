@@ -7,11 +7,11 @@ let activeCategoryFilter = 'all';
 let activePlatformFilter = 'all';
 let isAIOnline = false;
 
-// Exactly 3 verified active models for Groq
+// Exactly 3 verified active models for Groq (Zero decommissioned models)
 const GROQ_MODELS = [
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Primary - 800+ tok/s)' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Primary - Ultra-Fast)' },
   { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Secondary - Deep Reasoning)' },
-  { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT (Fallback)' }
+  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (Fallback)' }
 ];
 
 // Exactly 3 verified models for Local AI
@@ -148,14 +148,14 @@ async function checkAIHealth() {
 
     if (res.online) {
       if (collisionBadge) {
-        collisionBadge.innerText = 'AI COLLISION DETECTION: ACTIVE';
+        collisionBadge.innerText = `AI COLLISION DETECTION: ACTIVE (${res.provider.toUpperCase()})`;
         collisionBadge.style.color = 'var(--status-found)';
       }
       if (offlineDigitContainer) offlineDigitContainer.style.display = 'none';
     } else {
       if (collisionBadge) {
-        collisionBadge.innerText = 'AI COLLISION DETECTION: OFFLINE (FALLBACK ACTIVE)';
-        collisionBadge.style.color = 'var(--text-muted)';
+        collisionBadge.innerText = 'CONTEXT & COLLISION ENGINE: ACTIVE (LOCAL MATRIX)';
+        collisionBadge.style.color = 'var(--status-searching)';
       }
       if (offlineDigitContainer) offlineDigitContainer.style.display = 'block';
     }
@@ -201,16 +201,12 @@ async function setupSettingsModal() {
     modelSelect.innerHTML = list.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
 
     let target = currentVal || list[0].id;
-    if (target === 'llama-3.1-70b-versatile' || target === 'llama-3.1-70b') {
-      target = 'llama-3.3-70b-versatile';
+    if (['llama-3.1-70b-versatile', 'llama-3.1-70b', 'gemma2-9b-it'].includes(target)) {
+      target = 'llama-3.1-8b-instant';
     }
 
     const matched = list.find(m => m.id === target);
-    if (matched) {
-      modelSelect.value = target;
-    } else {
-      modelSelect.value = list[0].id;
-    }
+    modelSelect.value = matched ? target : list[0].id;
   };
 
   const updateVisibility = () => {
@@ -312,6 +308,8 @@ async function setupSettingsModal() {
 
 function setupPermutationPreview() {
   const usernameInput = document.getElementById('input-username');
+  const nameInput = document.getElementById('input-name');
+  const locationInput = document.getElementById('input-location');
   const previewBar = document.getElementById('permutation-preview-bar');
   const chkFuzzy = document.getElementById('chk-fuzzy');
   const chkDigits = document.getElementById('chk-digits');
@@ -330,8 +328,10 @@ function setupPermutationPreview() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: val,
-          max_permutations: 25,
-          include_digits: chkDigits ? chkDigits.checked : false
+          real_name: nameInput ? nameInput.value.trim() : '',
+          location: locationInput ? locationInput.value.trim() : '',
+          max_permutations: 35,
+          include_digits: chkDigits ? chkDigits.checked : true
         })
       });
       const data = await resp.json();
@@ -342,10 +342,12 @@ function setupPermutationPreview() {
           </span>
         `).join('');
       }
-    }, 250);
+    }, 200);
   };
 
   usernameInput.addEventListener('input', updatePreview);
+  if (nameInput) nameInput.addEventListener('input', updatePreview);
+  if (locationInput) locationInput.addEventListener('input', updatePreview);
   chkFuzzy.addEventListener('change', updatePreview);
   if (chkDigits) chkDigits.addEventListener('change', updatePreview);
 }
@@ -375,7 +377,7 @@ function startReconScan() {
   const realName = document.getElementById('input-name').value.trim();
   const location = document.getElementById('input-location').value.trim();
   const fuzzy = document.getElementById('chk-fuzzy').checked;
-  const digits = document.getElementById('chk-digits') ? document.getElementById('chk-digits').checked : false;
+  const digits = document.getElementById('chk-digits') ? document.getElementById('chk-digits').checked : true;
 
   if (!username && !email && !phone) {
     alert('Please provide at least a username, email, or phone number.');
@@ -394,7 +396,7 @@ function startReconScan() {
   if (currentEventSource) currentEventSource.close();
 
   const params = new URLSearchParams({
-    username, email, phone, real_name: realName, location, fuzzy, digits, max_perms: 25
+    username, email, phone, real_name: realName, location, fuzzy, digits, max_perms: 35
   });
 
   currentEventSource = new EventSource(`/api/scan/stream?${params.toString()}`);

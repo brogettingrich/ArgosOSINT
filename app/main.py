@@ -33,7 +33,7 @@ class ScanRequest(BaseModel):
     location: Optional[str] = None
     enable_fuzzy: bool = False
     include_digits: bool = False
-    max_permutations: int = 25
+    max_permutations: int = 35
 
 class SettingsPayload(BaseModel):
     ai_provider: str = "groq"
@@ -121,7 +121,13 @@ async def test_ai_settings(payload: SettingsPayload):
 async def preview_permutations(req: ScanRequest):
     if not req.username:
         return {"permutations": []}
-    perms = generate_permutations(req.username, max_variations=req.max_permutations, include_digits=req.include_digits)
+    perms = generate_permutations(
+        seed=req.username,
+        real_names=req.real_name or "",
+        location=req.location or "",
+        max_variations=req.max_permutations,
+        include_digits=req.include_digits
+    )
     return {"permutations": perms, "count": len(perms)}
 
 @app.get("/api/dossiers")
@@ -144,7 +150,7 @@ async def sse_scan_stream(
     location: Optional[str] = None,
     fuzzy: bool = False,
     digits: bool = False,
-    max_perms: int = 25
+    max_perms: int = 35
 ):
     target_label = username or email or phone or "Target"
     dossier_id = repo.create_dossier(
@@ -176,8 +182,19 @@ async def sse_scan_stream(
             clean_seed = username.strip().lower()
             usernames_to_probe = [clean_seed]
 
-            # 1. AI-Driven Context & Collision Permutations (if AI is active)
-            ai_perms = []
+            # 1. Deterministic Context Clue & Syllable/Country Matrix (Always active)
+            context_perms = generate_permutations(
+                seed=clean_seed,
+                real_names=real_name or "",
+                location=location or "",
+                max_variations=max_perms,
+                include_digits=digits or True
+            )
+            for p in context_perms:
+                if p["username"] not in usernames_to_probe:
+                    usernames_to_probe.append(p["username"])
+
+            # 2. AI Reasoning Engine Expansion (if AI is active and online)
             if ai_enabled:
                 yield f"data: {json.dumps({'type': 'status_update', 'message': 'AI reasoning engine analyzing context, syllables & collision patterns...'})}\n\n"
                 ai_perms = await AIEngine.synthesize_permutations(
@@ -189,13 +206,6 @@ async def sse_scan_stream(
                 for ap in ai_perms:
                     if ap not in usernames_to_probe:
                         usernames_to_probe.append(ap)
-
-            # 2. Local Heuristic Permutations (with optional digit collision matrix when offline)
-            if fuzzy or not ai_perms:
-                perms_list = generate_permutations(username, max_variations=max_perms, include_digits=(digits and not ai_enabled))
-                for p in perms_list:
-                    if p["username"] not in usernames_to_probe:
-                        usernames_to_probe.append(p["username"])
 
             yield f"data: {json.dumps({'type': 'permutation_list', 'variations': usernames_to_probe})}\n\n"
 

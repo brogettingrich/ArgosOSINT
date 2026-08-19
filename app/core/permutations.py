@@ -16,8 +16,21 @@ LEET_MAP = {
     '7': ['t'],
 }
 
-COMMON_PREFIXES = ['real', 'official', 'the', 'its', 'iam', 'im']
-COMMON_SUFFIXES = ['_', '__', '.', 'dev', 'yt', 'tv', 'official', 'real', '123', '01', '99', 'x', 'xx']
+COUNTRY_CODES = {
+    "israel": "il", "il": "il", "israel": "il",
+    "usa": "us", "us": "us", "united states": "us", "america": "us",
+    "uk": "uk", "united kingdom": "uk", "great britain": "uk", "england": "uk",
+    "canada": "ca", "ca": "ca",
+    "germany": "de", "de": "de", "deutschland": "de",
+    "france": "fr", "fr": "fr",
+    "brazil": "br", "br": "br", "brasil": "br",
+    "spain": "es", "es": "es", "espana": "es",
+    "italy": "it", "it": "it", "italia": "it",
+    "russia": "ru", "ru": "ru",
+    "australia": "au", "au": "au",
+    "india": "in", "in": "in",
+    "japan": "jp", "jp": "jp"
+}
 
 def clean_username(raw: str) -> str:
     return raw.strip().lower()
@@ -39,126 +52,124 @@ def calculate_levenshtein(s1: str, s2: str) -> int:
         previous_row = current_row
     return previous_row[-1]
 
-def generate_permutations(seed: str, max_variations: int = 50, include_digits: bool = False) -> List[Dict[str, Any]]:
+def generate_permutations(
+    seed: str, 
+    real_names: str = "", 
+    location: str = "", 
+    max_variations: int = 50, 
+    include_digits: bool = False
+) -> List[Dict[str, Any]]:
     seed_clean = clean_username(seed)
     if not seed_clean:
         return []
 
     results: Dict[str, Dict[str, Any]] = {}
 
-    def add_var(name: str, rule: str):
+    def add_var(name: str, rule: str, priority: int = 3):
         if not name or len(name) < 2 or len(name) > 32:
             return
-        if name not in results:
-            dist = calculate_levenshtein(seed_clean, name)
-            max_len = max(len(seed_clean), len(name))
-            similarity = round(1.0 - (dist / max_len), 2)
-            results[name] = {
-                "username": name,
+        clean_n = name.strip().lower()
+        if clean_n not in results:
+            dist = calculate_levenshtein(seed_clean, clean_n)
+            max_len = max(len(seed_clean), len(clean_n))
+            similarity = round(1.0 - (dist / max_len), 2) if max_len > 0 else 1.0
+            results[clean_n] = {
+                "username": clean_n,
                 "rule": rule,
+                "priority": 0 if clean_n == seed_clean else priority,
                 "distance": dist,
                 "similarity": similarity,
-                "is_seed": (name == seed_clean)
+                "is_seed": (clean_n == seed_clean)
             }
 
     # 1. Exact Seed
-    add_var(seed_clean, "exact_seed")
+    add_var(seed_clean, "exact_seed", priority=0)
 
-    # 2. Trailing Character Doubling / Elongation
+    # 2. Context Clue: Name Decomposition & Syllable Injections (e.g. ozalmagor -> oz_almagor, oz.almagor)
+    name_pairs = []
+    if real_names:
+        for name_part in real_names.split(","):
+            parts = [w.strip().lower() for w in re.split(r'[\s._\-]+', name_part) if w.strip()]
+            if len(parts) >= 2:
+                name_pairs.append((parts[0], parts[1]))
+
+    # Syllable splitting for handles without punctuation (e.g. ozalmagor -> oz + almagor)
+    if len(seed_clean) >= 5 and not any(c in seed_clean for c in '._-'):
+        for split_idx in [2, 3, 4]:
+            if split_idx < len(seed_clean) - 2:
+                p1 = seed_clean[:split_idx]
+                p2 = seed_clean[split_idx:]
+                name_pairs.append((p1, p2))
+
+    for p1, p2 in name_pairs:
+        add_var(f"{p1}_{p2}", "name_split_underscore", priority=1)
+        add_var(f"{p1}.{p2}", "name_split_dot", priority=1)
+        add_var(f"{p1}-{p2}", "name_split_hyphen", priority=1)
+        add_var(f"{p2}_{p1}", "name_split_inverted", priority=1)
+        add_var(f"{p2}.{p1}", "name_split_inverted_dot", priority=1)
+        add_var(f"{p1[0]}_{p2}", "initial_underscore", priority=2)
+        add_var(f"{p1[0]}.{p2}", "initial_dot", priority=2)
+        add_var(f"{p1}_{p2[0]}", "last_initial_underscore", priority=2)
+        add_var(f"{p1}.{p2[0]}", "last_initial_dot", priority=2)
+
+    # 3. Context Clue: Country / Location Suffixes & Prefixes (e.g. israel -> _il, .il, il_)
+    if location:
+        loc_clean = location.strip().lower()
+        cc = COUNTRY_CODES.get(loc_clean, loc_clean[:2] if len(loc_clean) <= 3 else "")
+        if cc:
+            add_var(f"{seed_clean}_{cc}", "country_suffix_underscore", priority=1)
+            add_var(f"{seed_clean}.{cc}", "country_suffix_dot", priority=1)
+            add_var(f"{cc}_{seed_clean}", "country_prefix_underscore", priority=1)
+            add_var(f"{seed_clean}{cc}", "country_suffix_concat", priority=2)
+            for p1, p2 in name_pairs[:2]:
+                add_var(f"{p1}_{p2}_{cc}", "name_country_suffix", priority=1)
+                add_var(f"{p1}.{p2}.{cc}", "name_country_dot_suffix", priority=1)
+
+    # 4. Trailing Character Doubling / Elongation (e.g. account_loading -> account_loadingg)
     last_char = seed_clean[-1]
     if last_char.isalpha():
-        add_var(f"{seed_clean}{last_char}", "trailing_double_char")
-        add_var(f"{seed_clean}{last_char}{last_char}", "trailing_triple_char")
+        add_var(f"{seed_clean}{last_char}", "trailing_double_char", priority=2)
+        add_var(f"{seed_clean}{last_char}{last_char}", "trailing_triple_char", priority=2)
 
-    # 3. Repeated Dot / Punctuation Compression
-    if re.search(r'\.{2,}', seed_clean):
-        add_var(re.sub(r'\.{2,}', '..', seed_clean), "double_dot")
-        add_var(re.sub(r'\.{2,}', '.', seed_clean), "single_dot")
-        add_var(re.sub(r'\.+', '', seed_clean), "stripped_dots")
-        add_var(re.sub(r'\.+', '_', seed_clean), "dots_to_underscore")
-        add_var(re.sub(r'\.+', '-', seed_clean), "dots_to_hyphen")
-
-    # 4. Separator Swaps & Removals (_ vs . vs -)
+    # 5. Separator Swaps & Removals (_ vs . vs -)
     if '.' in seed_clean and '_' not in seed_clean:
-        add_var(seed_clean.replace('.', '_'), "dot_to_underscore")
-        add_var(seed_clean.replace('.', '-'), "dot_to_hyphen")
-        add_var(seed_clean.replace('.', ''), "remove_dots")
+        add_var(seed_clean.replace('.', '_'), "dot_to_underscore", priority=1)
+        add_var(seed_clean.replace('.', '-'), "dot_to_hyphen", priority=2)
+        add_var(seed_clean.replace('.', ''), "remove_dots", priority=2)
 
     if '_' in seed_clean and '.' not in seed_clean:
-        add_var(seed_clean.replace('_', '.'), "underscore_to_dot")
-        add_var(seed_clean.replace('_', '-'), "underscore_to_hyphen")
-        add_var(seed_clean.replace('_', ''), "remove_underscores")
+        add_var(seed_clean.replace('_', '.'), "underscore_to_dot", priority=1)
+        add_var(seed_clean.replace('_', '-'), "underscore_to_hyphen", priority=2)
+        add_var(seed_clean.replace('_', ''), "remove_underscores", priority=2)
 
-    if '-' in seed_clean:
-        add_var(seed_clean.replace('-', '_'), "hyphen_to_underscore")
-        add_var(seed_clean.replace('-', '.'), "hyphen_to_dot")
-        add_var(seed_clean.replace('-', ''), "remove_hyphens")
-
-    # 5. Word-boundary elongation
-    parts = re.split(r'([._\-])', seed_clean)
+    # 6. Word-boundary elongation (e.g. account_loading -> account_loadingg, accountt_loading)
+    parts = re.split(r'([._\\-])', seed_clean)
     if len(parts) > 1:
         first_word = parts[0]
         if first_word and first_word[-1].isalpha():
-            add_var(first_word + first_word[-1] + "".join(parts[1:]), "first_word_elongation")
+            add_var(first_word + first_word[-1] + "".join(parts[1:]), "first_word_elongation", priority=2)
         last_word = parts[-1]
         if last_word and last_word[-1].isalpha():
-            add_var("".join(parts[:-1]) + last_word + last_word[-1], "last_word_elongation")
+            add_var("".join(parts[:-1]) + last_word + last_word[-1], "last_word_elongation", priority=2)
 
-    # 6. Existing Digit Separation
-    num_match = re.search(r'^(.*?)(\d+)$', seed_clean)
-    if num_match:
-        stem, num = num_match.groups()
-        if stem:
-            add_var(f"{stem}_{num}", "separated_digits_underscore")
-            add_var(f"{stem}.{num}", "separated_digits_dot")
-            if len(num) == 1:
-                add_var(f"{stem}0{num}", "zero_padded_num")
-                add_var(f"{stem}_0{num}", "zero_padded_num_underscore")
+    # 7. Collision Fallbacks & Digit Appends (e.g. account.loading3, account_loading1)
+    base_stems = [seed_clean]
+    if '.' in seed_clean:
+        base_stems.append(seed_clean.replace('.', '_'))
+    elif '_' in seed_clean:
+        base_stems.append(seed_clean.replace('_', '.'))
+    for p1, p2 in name_pairs[:2]:
+        base_stems.append(f"{p1}_{p2}")
+        base_stems.append(f"{p1}.{p2}")
 
-    # 7. Optional Systematic Digit Collision Matrix (when enabled offline)
-    if include_digits:
-        base_forms = [seed_clean]
-        if '.' in seed_clean:
-            base_forms.append(seed_clean.replace('.', '_'))
-            base_forms.append(seed_clean.replace('.', ''))
-        elif '_' in seed_clean:
-            base_forms.append(seed_clean.replace('_', '.'))
-            base_forms.append(seed_clean.replace('_', ''))
-        
-        for base in base_forms:
-            for d in ['1', '2', '3', '7', '9', '01', '99']:
-                add_var(f"{base}{d}", "digit_collision_append")
-                add_var(f"{base}_{d}", "digit_collision_underscore")
-                add_var(f"{base}.{d}", "digit_collision_dot")
-
-    # 8. Prefixes & Suffixes
-    stripped = seed_clean.strip('._-')
-    if stripped and stripped != seed_clean:
-        add_var(stripped, "stripped_edges")
-
-    if len(seed_clean) <= 16:
-        for pre in COMMON_PREFIXES[:3]:
-            add_var(f"{pre}_{stripped or seed_clean}", "prefix_addition")
-            add_var(f"{pre}.{stripped or seed_clean}", "prefix_dot_addition")
-        for suf in COMMON_SUFFIXES[:4]:
-            add_var(f"{stripped or seed_clean}{suf}", "suffix_addition")
-
-    # 9. Leetspeak variations
-    leet_candidates = [seed_clean]
-    for char, replacements in LEET_MAP.items():
-        if char in seed_clean:
-            new_cands = []
-            for cand in leet_candidates[:3]:
-                for r in replacements:
-                    new_cands.append(cand.replace(char, r, 1))
-            leet_candidates.extend(new_cands)
-
-    for lc in set(leet_candidates):
-        if lc != seed_clean:
-            add_var(lc, "leetspeak_variation")
+    for base in base_stems[:3]:
+        for d in ['1', '2', '3', '7', '9', '01', '99']:
+            add_var(f"{base}{d}", "collision_digit", priority=2)
+            add_var(f"{base}_{d}", "collision_digit_underscore", priority=2)
+            add_var(f"{base}.{d}", "collision_digit_dot", priority=2)
 
     sorted_vars = sorted(
         results.values(),
-        key=lambda x: (not x["is_seed"], -x["similarity"], x["distance"])
+        key=lambda x: (x["priority"], not x["is_seed"], -x["similarity"], x["distance"])
     )
     return sorted_vars[:max_variations]
