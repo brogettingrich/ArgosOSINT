@@ -1,376 +1,241 @@
 import asyncio
-import json
+import re
+import time
 import httpx
-from typing import List, Dict, Any, Optional
-from app.config import COMMON_HEADERS, REQUEST_TIMEOUT, MAX_CONCURRENT_REQUESTS, HTTP_VERIFY
+from typing import AsyncGenerator, Dict, Any, List, Optional
+from urllib.parse import urlparse
+from app.config import MAX_CONCURRENT_REQUESTS, REQUEST_TIMEOUT, COMMON_HEADERS, HTTP_VERIFY
+from app.modules.sites_catalog import SITES_CATALOG
 
-SITES_DB = [
-    # ── Social & Community Platforms ──
-    {
-        "name": "Instagram",
-        "url": "https://www.instagram.com/{}/",
-        "profile_url": "https://www.instagram.com/{}/",
-        "check": "instagram_strict",
-        "category": "Social"
-    },
-    {
-        "name": "Pinterest",
-        "url": "https://www.pinterest.com/{}/",
-        "profile_url": "https://www.pinterest.com/{}/",
-        "check": "pinterest_strict",
-        "category": "Social"
-    },
-    {
-        "name": "TikTok",
-        "url": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{}",
-        "profile_url": "https://www.tiktok.com/@{}",
-        "check": "oembed_strict",
-        "category": "Social"
-    },
-    {
-        "name": "Twitter / X",
-        "url": "https://publish.twitter.com/oembed?url=https://twitter.com/{}",
-        "profile_url": "https://twitter.com/{}",
-        "check": "oembed_strict",
-        "category": "Social"
-    },
-    {
-        "name": "YouTube",
-        "url": "https://www.youtube.com/@{}",
-        "profile_url": "https://www.youtube.com/@{}",
-        "check": "youtube_strict",
-        "category": "Social"
-    },
-    {
-        "name": "Reddit",
-        "url": "https://old.reddit.com/user/{}/",
-        "profile_url": "https://reddit.com/user/{}",
-        "check": "reddit_strict",
-        "category": "Social"
-    },
-    {
-        "name": "Telegram",
-        "url": "https://t.me/{}",
-        "profile_url": "https://t.me/{}",
-        "check": "telegram_verified",
-        "category": "Social"
-    },
-    {
-        "name": "Bluesky",
-        "url": "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={}.bsky.social",
-        "profile_url": "https://bsky.app/profile/{}.bsky.social",
-        "check": "json_key",
-        "key": "handle",
-        "category": "Social"
-    },
-    {
-        "name": "Mastodon",
-        "url": "https://mastodon.social/api/v1/accounts/lookup?acct={}",
-        "profile_url": "https://mastodon.social/@{}",
-        "check": "json_key",
-        "key": "username",
-        "category": "Social"
-    },
+# Shared database reference
+SITES_DB = SITES_CATALOG
 
-    # ── Developer & Engineering Platforms ──
-    {
-        "name": "GitHub",
-        "url": "https://api.github.com/users/{}",
-        "profile_url": "https://github.com/{}",
-        "check": "json_key",
-        "key": "login",
-        "category": "Developer"
-    },
-    {
-        "name": "GitLab",
-        "url": "https://gitlab.com/api/v4/users?username={}",
-        "profile_url": "https://gitlab.com/{}",
-        "check": "json_array_nonempty",
-        "category": "Developer"
-    },
-    {
-        "name": "DockerHub",
-        "url": "https://hub.docker.com/v2/users/{}/",
-        "profile_url": "https://hub.docker.com/u/{}",
-        "check": "json_key",
-        "key": "username",
-        "category": "Developer"
-    },
-    {
-        "name": "PyPI",
-        "url": "https://pypi.org/user/{}/",
-        "profile_url": "https://pypi.org/user/{}/",
-        "check": "pypi_profile",
-        "category": "Developer"
-    },
-    {
-        "name": "HackerRank",
-        "url": "https://www.hackerrank.com/rest/hackers/{}",
-        "profile_url": "https://www.hackerrank.com/{}",
-        "check": "json_key",
-        "key": "model",
-        "category": "Developer"
-    },
-    {
-        "name": "Dev.to",
-        "url": "https://dev.to/api/users/by_username?url={}",
-        "profile_url": "https://dev.to/{}",
-        "check": "json_key",
-        "key": "username",
-        "category": "Developer"
-    },
-    {
-        "name": "Keybase",
-        "url": "https://keybase.io/_/api/1.0/user/lookup.json?usernames={}",
-        "profile_url": "https://keybase.io/{}",
-        "check": "keybase_json",
-        "category": "Developer"
-    },
+# Domain concurrency semaphores to protect against domain-level rate limits
+DOMAIN_SEMAPHORES: Dict[str, asyncio.Semaphore] = {}
+GLOBAL_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    # ── Gaming Platforms ──
-    {
-        "name": "Chess.com",
-        "url": "https://api.chess.com/pub/player/{}",
-        "profile_url": "https://www.chess.com/member/{}",
-        "check": "json_key",
-        "key": "username",
-        "category": "Gaming"
-    },
-    {
-        "name": "Lichess",
-        "url": "https://lichess.org/api/user/{}",
-        "profile_url": "https://lichess.org/@/{}",
-        "check": "json_key",
-        "key": "id",
-        "category": "Gaming"
-    },
-    {
-        "name": "Steam",
-        "url": "https://steamcommunity.com/id/{}/?xml=1",
-        "profile_url": "https://steamcommunity.com/id/{}",
-        "check": "steam_xml",
-        "category": "Gaming"
-    },
+def get_domain_semaphore(url: str) -> asyncio.Semaphore:
+    domain = urlparse(url).netloc
+    if domain not in DOMAIN_SEMAPHORES:
+        DOMAIN_SEMAPHORES[domain] = asyncio.Semaphore(4)
+    return DOMAIN_SEMAPHORES[domain]
 
-    # ── Media & Creative Networks ──
-    {
-        "name": "ArtStation",
-        "url": "https://www.artstation.com/users/{}.json",
-        "profile_url": "https://www.artstation.com/{}",
-        "check": "json_key",
-        "key": "username",
-        "category": "Media"
-    },
-    {
-        "name": "SoundCloud",
-        "url": "https://soundcloud.com/{}",
-        "profile_url": "https://soundcloud.com/{}",
-        "check": "soundcloud_strict",
-        "category": "Media"
-    },
-    {
-        "name": "Bandcamp",
-        "url": "https://{}.bandcamp.com",
-        "profile_url": "https://{}.bandcamp.com",
-        "check": "bandcamp_strict",
-        "category": "Media"
-    },
-    {
-        "name": "Behance",
-        "url": "https://www.behance.net/{}",
-        "profile_url": "https://www.behance.net/{}",
-        "check": "behance_strict",
-        "category": "Media"
+def extract_html_metadata(html: str) -> Dict[str, Any]:
+    meta = {
+        "display_name": None,
+        "bio": None,
+        "avatar_url": None,
+        "outbound_links": [],
+        "mentioned_handles": [],
+        "mentioned_emails": []
     }
-]
+    if not html or len(html) < 50:
+        return meta
 
-async def probe_single_target(client: httpx.AsyncClient, site: Dict[str, Any], username: str) -> Dict[str, Any]:
-    url_template = site["url"]
-    count_fmt = url_template.count("{}")
-    url = url_template.format(*([username] * count_fmt))
-    profile_url = site.get("profile_url", url).format(username)
-    site_name = site["name"]
-    category = site["category"]
-    check_type = site.get("check", "json_key")
+    # 1. og:title / Title tag
+    title_match = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']', html, re.I)
+    if not title_match:
+        title_match = re.search(r'<title>(.*?)</title>', html, re.I)
+    if title_match:
+        meta["display_name"] = title_match.group(1).split('|')[0].split('•')[0].split('-')[0].strip()
 
+    # 2. og:description / Bio
+    desc_match = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', html, re.I)
+    if not desc_match:
+        desc_match = re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html, re.I)
+    if desc_match:
+        bio_text = desc_match.group(1).strip()
+        meta["bio"] = bio_text
+        meta["mentioned_handles"] = list(set(re.findall(r'@([a-zA-Z0-9._]{3,30})', bio_text)))
+        meta["mentioned_emails"] = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', bio_text)))
+
+    # 3. og:image / Avatar
+    img_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', html, re.I)
+    if img_match:
+        meta["avatar_url"] = img_match.group(1).strip()
+
+    # 4. Outbound links (Linktree, personal websites, etc.)
+    outbound = re.findall(r'href=["\'](https?://(?:www\.)?(?:linktr\.ee|beacons\.ai|carrd\.co|github\.com|twitter\.com|x\.com|t\.me)/[a-zA-Z0-9._/-]+)["\']', html, re.I)
+    meta["outbound_links"] = list(set(outbound))[:5]
+
+    return meta
+
+async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], username: str) -> Dict[str, Any]:
+    url = site["url_template"].format(username)
+    profile_url = site.get("profile_url", site["url_template"]).format(username)
+    handler_type = site.get("check_type", "status_code")
+    special_handler = site.get("special_handler")
+
+    start_time = time.time()
     result = {
-        "site": site_name,
-        "category": category,
+        "site": site["name"],
+        "category": site.get("category", "General"),
         "username": username,
         "profile_url": profile_url,
         "found": False,
         "status_code": 0,
         "latency_ms": 0,
-        "error": None
+        "metadata": {}
     }
 
-    try:
-        t0 = asyncio.get_event_loop().time()
-        headers = dict(COMMON_HEADERS)
+    dom_sem = get_domain_semaphore(url)
 
-        if check_type == "instagram_strict":
-            headers["User-Agent"] = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1"
-
-        elif check_type in ["pinterest_strict", "youtube_strict", "reddit_strict"]:
-            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-
-        # Basic retry/backoff for transient errors and server 5xx/429 responses
-        attempts = 3
-        backoff = 0.1
-        resp = None
-        for attempt in range(attempts):
+    async with GLOBAL_SEMAPHORE:
+        async with dom_sem:
             try:
-                resp = await client.get(url, headers=headers, timeout=REQUEST_TIMEOUT, follow_redirects=True)
-                # Retry on rate limit or server errors
-                if resp.status_code in (429,) or 500 <= resp.status_code < 600:
-                    await asyncio.sleep(backoff)
-                    backoff *= 2
-                    continue
-                break
-            except (httpx.TimeoutException, httpx.RequestError):
-                await asyncio.sleep(backoff)
-                backoff *= 2
-                continue
+                # -------------------------------------------------------------
+                # SPECIALIZED API PROBES (Anti-False-Positive Handlers)
+                # -------------------------------------------------------------
+                if special_handler == "instagram":
+                    # Probe Instagram Web / Mobile API
+                    insta_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
+                    h = {**COMMON_HEADERS, "X-IG-App-ID": "936619743392459", "Referer": f"https://www.instagram.com/{username}/"}
+                    resp = await client.get(insta_url, headers=h, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        try:
+                            user_data = resp.json().get("data", {}).get("user", {})
+                            if user_data:
+                                result["found"] = True
+                                result["metadata"] = {
+                                    "display_name": user_data.get("full_name"),
+                                    "bio": user_data.get("biography"),
+                                    "avatar_url": user_data.get("profile_pic_url_hd") or user_data.get("profile_pic_url"),
+                                    "is_verified": user_data.get("is_verified", False)
+                                }
+                        except Exception:
+                            result["found"] = True
 
-        if resp is None:
-            raise httpx.RequestError("Failed to fetch after retries")
+                elif special_handler == "tiktok":
+                    # Probe TikTok public OEMBED API
+                    tt_url = f"https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{username}"
+                    resp = await client.get(tt_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("author_name") or data.get("title"):
+                            result["found"] = True
+                            result["metadata"] = {
+                                "display_name": data.get("author_name"),
+                                "bio": data.get("title"),
+                                "avatar_url": data.get("thumbnail_url")
+                            }
 
-        t1 = asyncio.get_event_loop().time()
-        result["status_code"] = resp.status_code
-        result["latency_ms"] = int((t1 - t0) * 1000)
+                elif special_handler == "reddit":
+                    # Probe Reddit public JSON API
+                    r_url = f"https://www.reddit.com/user/{username}/about.json"
+                    resp = await client.get(r_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        data = resp.json().get("data", {})
+                        if data.get("name") and not data.get("is_suspended"):
+                            result["found"] = True
+                            result["metadata"] = {
+                                "display_name": data.get("subreddit", {}).get("title") or data.get("name"),
+                                "bio": data.get("subreddit", {}).get("public_description"),
+                                "avatar_url": data.get("icon_img")
+                            }
 
-        # 1. Instagram Strict Inspection
-        if check_type == "instagram_strict":
-            if resp.status_code == 200:
-                txt = resp.text.lower()
-                if f"@{username.lower()}" in txt or "instagram photos and videos" in txt:
-                    if "accounts/login" not in resp.url.path:
+                elif special_handler == "github":
+                    # Probe GitHub API
+                    gh_url = f"https://api.github.com/users/{username}"
+                    resp = await client.get(gh_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        data = resp.json()
                         result["found"] = True
+                        result["metadata"] = {
+                            "display_name": data.get("name"),
+                            "bio": data.get("bio"),
+                            "avatar_url": data.get("avatar_url"),
+                            "location": data.get("location"),
+                            "outbound_links": [data.get("blog")] if data.get("blog") else []
+                        }
 
-        # 2. Pinterest Strict Inspection
-        elif check_type == "pinterest_strict":
-            if resp.status_code == 200:
-                txt = resp.text
-                if ("__PWS_DATA__" in txt or "on Pinterest" in txt) and "User not found" not in txt and "could not be found" not in txt:
-                    result["found"] = True
+                elif special_handler == "telegram":
+                    # Probe Telegram Web preview
+                    tg_url = f"https://t.me/{username}"
+                    resp = await client.get(tg_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    text = resp.text
+                    if resp.status_code == 200:
+                        # If t.me has real account, it has extraview or action buttons
+                        if "tgme_page_extra" in text and "If you have Telegram, you can contact" not in text:
+                            result["found"] = True
+                            result["metadata"] = extract_html_metadata(text)
 
-        # 3. YouTube Channel Inspection
-        elif check_type == "youtube_strict":
-            if resp.status_code == 200:
-                txt = resp.text
-                if ("channel" in txt.lower() or "subscriber" in txt.lower() or "og:title" in txt) and "404 Not Found" not in txt and "This page isn't available" not in txt:
-                    result["found"] = True
-
-        # 4. Reddit Strict Inspection
-        elif check_type == "reddit_strict":
-            if resp.status_code == 200:
-                txt = resp.text.lower()
-                if f"/user/{username.lower()}" in txt and "nobody on reddit goes by that name" not in txt and "page not found" not in txt:
-                    result["found"] = True
-
-        # 5. TikTok / Twitter oEmbed Verification
-        elif check_type == "oembed_strict":
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("author_name") or data.get("title") or data.get("html"):
-                    result["found"] = True
-
-        # 6. JSON Key Existence
-        elif check_type == "json_key":
-            if resp.status_code == 200:
-                data = resp.json()
-                req_key = site.get("key")
-                if req_key and req_key in data and data[req_key]:
-                    result["found"] = True
-
-        # 7. JSON Array Non-Empty
-        elif check_type == "json_array_nonempty":
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list) and len(data) > 0:
-                    result["found"] = True
-
-        # 8. Telegram Verification
-        elif check_type == "telegram_verified":
-            if resp.status_code == 200:
-                text = resp.text
-                if "tgme_page_title" in text and "tgme_page_extra" in text:
-                    if "If you have Telegram, you can contact" in text or f"@{username.lower()}" in text.lower():
+                elif special_handler == "steam":
+                    # Probe Steam XML profile
+                    steam_url = f"https://steamcommunity.com/id/{username}/?xml=1"
+                    resp = await client.get(steam_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200 and "<steamID64>" in resp.text:
                         result["found"] = True
+                        meta = extract_html_metadata(resp.text)
+                        # Extract Steam display name
+                        st_name = re.search(r'<steamID><!\[CDATA\[(.*?)\]\]></steamID>', resp.text)
+                        if st_name:
+                            meta["display_name"] = st_name.group(1)
+                        result["metadata"] = meta
 
-        # 9. Keybase API
-        elif check_type == "keybase_json":
-            if resp.status_code == 200:
-                data = resp.json()
-                them = data.get("them", [])
-                if them and them[0] is not None:
-                    result["found"] = True
+                elif special_handler == "pinterest":
+                    # Probe Pinterest API endpoint
+                    pin_url = f"https://www.pinterest.com/resource/UserResource/get/?data=%7B%22options%22%3A%7B%22username%22%3A%22{username}%22%7D%7D"
+                    h = {**COMMON_HEADERS, "X-Requested-With": "XMLHttpRequest"}
+                    resp = await client.get(pin_url, headers=h, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        try:
+                            user_data = resp.json().get("resource_response", {}).get("data", {})
+                            if user_data and user_data.get("username"):
+                                result["found"] = True
+                                result["metadata"] = {
+                                    "display_name": user_data.get("full_name"),
+                                    "bio": user_data.get("about"),
+                                    "avatar_url": user_data.get("image_xlarge_url")
+                                }
+                        except Exception:
+                            pass
 
-        # 10. Steam XML Profile
-        elif check_type == "steam_xml":
-            if resp.status_code == 200 and "<steamID64>" in resp.text and "<error>" not in resp.text:
-                result["found"] = True
+                # -------------------------------------------------------------
+                # STANDARD MULTI-FACTOR VERIFICATION (MFVP Protocol)
+                # -------------------------------------------------------------
+                else:
+                    resp = await client.get(url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT, follow_redirects=True)
+                    result["status_code"] = resp.status_code
+                    final_url = str(resp.url).lower()
+                    text = resp.text
 
-        # 11. PyPI Profile
-        elif check_type == "pypi_profile":
-            if resp.status_code == 200 and "User profile of" in resp.text:
-                result["found"] = True
+                    # Tier 1: Reject redirect bounces to login, register, 404 pages
+                    is_redirect_bounce = any(
+                        p in final_url for p in ["/login", "/signin", "/signup", "/register", "404", "error", "/explore"]
+                    ) and not (f"/{username.lower()}" in final_url or f"@{username.lower()}" in final_url)
 
-        # 12. SoundCloud Strict
-        elif check_type == "soundcloud_strict":
-            if resp.status_code == 200 and 'content="soundcloud://users:' in resp.text:
-                result["found"] = True
+                    # Tier 2: Check presence and error indicators
+                    if resp.status_code == 200 and not is_redirect_bounce:
+                        err_msg = site.get("error_message")
+                        if err_msg and err_msg.lower() in text.lower():
+                            result["found"] = False
+                        else:
+                            result["found"] = True
+                            result["metadata"] = extract_html_metadata(text)
+                    else:
+                        result["found"] = False
 
-        # 13. Bandcamp Strict
-        elif check_type == "bandcamp_strict":
-            if resp.status_code == 200 and "bandcamp.com" in resp.text:
-                txt = resp.text.lower()
-                if "domain not found" not in txt and "sign up" not in txt and "create your account" not in txt:
-                    result["found"] = True
+            except Exception:
+                result["found"] = False
 
-        # 14. Behance Strict
-        elif check_type == "behance_strict":
-            if resp.status_code == 200 and "behance.net" in resp.text:
-                txt = resp.text.lower()
-                if "page not found" not in txt and "sign up" not in txt:
-                    result["found"] = True
-
-    except httpx.TimeoutException:
-        result["error"] = "TIMEOUT"
-    except httpx.RequestError:
-        result["error"] = "NETWORK_ERROR"
-    except Exception as e:
-        result["error"] = str(e)
-
+    result["latency_ms"] = int((time.time() - start_time) * 1000)
     return result
 
-async def scan_usernames_async(usernames: List[str], concurrency: int = MAX_CONCURRENT_REQUESTS):
-    semaphore = asyncio.Semaphore(concurrency)
-    limits = httpx.Limits(max_keepalive_connections=concurrency, max_connections=concurrency * 2)
-
-    async with httpx.AsyncClient(limits=limits, verify=HTTP_VERIFY) as client:
-        async def bounded_probe(site, u):
-            async with semaphore:
-                return await probe_single_target(client, site, u)
-
-        # Create and maintain a bounded set of in-flight tasks to avoid building a huge task list
-        in_flight = set()
-        MAX_IN_FLIGHT = max(10, concurrency * 3)
-
+async def scan_usernames_async(usernames: List[str]) -> AsyncGenerator[Dict[str, Any], None]:
+    async with httpx.AsyncClient(
+        timeout=REQUEST_TIMEOUT, 
+        verify=HTTP_VERIFY,
+        limits=httpx.Limits(max_connections=MAX_CONCURRENT_REQUESTS, max_keepalive_connections=15)
+    ) as client:
         for u in usernames:
-            for site in SITES_DB:
-                task = asyncio.create_task(bounded_probe(site, u))
-                in_flight.add(task)
-
-                if len(in_flight) >= MAX_IN_FLIGHT:
-                    done, _ = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
-                    for d in done:
-                        in_flight.remove(d)
-                        yield d.result()
-
-        # drain the remaining tasks
-        while in_flight:
-            done, _ = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
-            for d in done:
-                in_flight.remove(d)
-                yield d.result()
+            tasks = [check_single_site(client, site, u) for site in SITES_CATALOG]
+            for coro in asyncio.as_completed(tasks):
+                res = await coro
+                yield res

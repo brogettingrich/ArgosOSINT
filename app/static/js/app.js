@@ -569,12 +569,67 @@ function renderFindingsGrid() {
   filtered.forEach(item => addFindingCard(item));
 }
 
+function launchPivotScan(targetHandle) {
+  const input = document.getElementById('input-username');
+  if (input) {
+    input.value = targetHandle;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    startReconScan();
+  }
+}
+
 function addFindingCard(item) {
   const grid = document.getElementById('results-grid');
   const card = document.createElement('div');
   card.className = 'target-card';
   const corrob = item.corroboration || { score: 50, verdict: 'VERIFIED' };
+  const meta = item.metadata || {};
+  
   const aliasTag = corrob.matched_alias ? `<span class="alias-tag">Matched: ${corrob.matched_alias}</span>` : '';
+  const displayName = meta.display_name ? `<div style="font-size:13px;font-weight:600;color:var(--text-primary);">${meta.display_name}</div>` : '';
+  
+  // Avatar or initial fallback
+  const avatarHtml = meta.avatar_url ? `
+    <img src="${meta.avatar_url}" class="profile-avatar" alt="Avatar" onerror="this.style.display='none';">
+  ` : `
+    <div class="profile-avatar-fallback">${item.site.substring(0, 2).toUpperCase()}</div>
+  `;
+
+  // Bio Snippet
+  const bioHtml = meta.bio ? `
+    <div class="profile-bio-box">${meta.bio}</div>
+  ` : '';
+
+  // Mentioned Pivots
+  let pivotsHtml = '';
+  if (meta.mentioned_handles && meta.mentioned_handles.length > 0) {
+    pivotsHtml = `
+      <div class="pivots-container">
+        <span class="pivots-label">Discovered Pivot Handles:</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${meta.mentioned_handles.map(h => `
+            <button type="button" class="btn-pivot-chip" onclick="launchPivotScan('${h}')">
+              Pivot @${h} [⤾]
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // Outbound Links
+  let linksHtml = '';
+  if (meta.outbound_links && meta.outbound_links.length > 0) {
+    linksHtml = `
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;">
+        ${meta.outbound_links.map(l => `
+          <a href="${l}" target="_blank" rel="noopener" class="sub-chip" style="font-size:9px;color:var(--status-searching);">
+            ${l.replace(/^https?:\/\/(www\.)?/, '')} [↗]
+          </a>
+        `).join('')}
+      </div>
+    `;
+  }
 
   card.innerHTML = `
     <div class="card-top">
@@ -586,8 +641,20 @@ function addFindingCard(item) {
         ${item.is_seed ? 'Exact Match' : `${corrob.score}% Match`}
       </span>
     </div>
-    <div class="account-handle">Handle: <strong>@${item.username}</strong></div>
+
+    <div class="profile-header-row">
+      ${avatarHtml}
+      <div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;">
+        ${displayName}
+        <div class="account-handle">Handle: <strong>@${item.username}</strong></div>
+      </div>
+    </div>
+
     ${aliasTag}
+    ${bioHtml}
+    ${pivotsHtml}
+    ${linksHtml}
+
     <a href="${item.profile_url}" target="_blank" rel="noopener" class="btn-profile-link">
       Open Profile [↗]
     </a>
