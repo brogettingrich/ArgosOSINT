@@ -16,7 +16,6 @@ DEFAULT_LOCAL_MODEL = "llama3.2"
 def strip_reasoning_tags(text: str) -> str:
     if not text:
         return ""
-    # Remove <think>...</think> or [REASONING]...[/REASONING] blocks
     cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
     cleaned = re.sub(r'\[reasoning\].*?\[/reasoning\]', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
     cleaned = re.sub(r'```json\s*', '', cleaned)
@@ -39,12 +38,10 @@ class AIEngine:
                     chat_models = []
                     for m in models_data:
                         mid = m.get("id", "")
-                        # Ignore whisper, guard, or embeddings
                         if any(x in mid.lower() for x in ["whisper", "guard", "embed", "vision"]):
                             continue
                         chat_models.append({"id": mid, "name": mid})
 
-                    # Sort prioritizing fast general chat models
                     def sort_priority(item):
                         mid = item["id"]
                         if "gpt-oss-20b" in mid: return 0
@@ -95,14 +92,12 @@ class AIEngine:
 
             elif provider in ["ollama", "local"]:
                 clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
-                # Guard against local host being ArgosOSINT port (8500)
                 if ":8500" in clean_host:
                     clean_host = DEFAULT_LOCAL_HOST
 
                 clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
 
                 async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-                    # 1. Test Ollama native
                     try:
                         r_ollama = await client.get(f"{clean_host}/api/tags", timeout=3.0)
                         if r_ollama.status_code == 200:
@@ -110,7 +105,6 @@ class AIEngine:
                     except Exception:
                         pass
 
-                    # 2. Test Local OpenAI endpoint (LM Studio / LocalAI)
                     try:
                         r_openai = await client.get(f"{clean_host}/v1/models", timeout=3.0)
                         if r_openai.status_code in [200, 401]:
@@ -129,7 +123,7 @@ class AIEngine:
             return {"success": False, "status": "offline", "error": str(e)}
 
     @staticmethod
-    async def query_llm(provider: str, api_key: str, model: str, host: str, system_prompt: str, user_prompt: str, temperature: float = 0.2) -> Optional[str]:
+    async def query_llm(provider: str, api_key: str, model: str, host: str, system_prompt: str, user_prompt: str, temperature: float = 0.1) -> Optional[str]:
         try:
             if provider == "groq":
                 clean_key = (api_key or "").strip().strip('"').strip("'")
@@ -208,11 +202,10 @@ class AIEngine:
             "Generate handles with first/last names, country suffixes (_il, _us, _uk), and numbers (1, 2, 3)."
         )
 
-        raw_resp = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.3)
+        raw_resp = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.2)
         if not raw_resp:
             return []
 
-        # Extract all handles using regex to never fail on formatting
         extracted = re.findall(r'["\']?([a-zA-Z0-9._\-]{2,32})["\']?', raw_resp)
         stop_words = {"username", "usernames", "json", "list", "output", "handles", "names", "here", "are"}
         valid = [
@@ -222,7 +215,15 @@ class AIEngine:
         return valid[:25]
 
     @classmethod
-    async def generate_dossier_briefing(cls, settings: Dict[str, Any], target_name: str, findings: List[Dict[str, Any]], email_info: Optional[Dict[str, Any]] = None, phone_info: Optional[Dict[str, Any]] = None, location: str = "") -> Optional[str]:
+    async def generate_dossier_briefing(
+        cls, 
+        settings: Dict[str, Any], 
+        target_name: str, 
+        findings: List[Dict[str, Any]], 
+        email_info: Optional[Dict[str, Any]] = None, 
+        phone_info: Optional[Dict[str, Any]] = None, 
+        location: str = ""
+    ) -> Optional[Dict[str, Any]]:
         provider = settings.get("ai_provider", "groq")
         api_key = settings.get("ai_api_key", "")
         model = settings.get("ai_model", "")
@@ -231,19 +232,86 @@ class AIEngine:
         if not findings and not email_info and not phone_info:
             return None
 
+        # Exact requested system prompt
         system_prompt = (
-            "You are an intelligence analyst for ArgosOSINT. "
-            "Write a concise, 2-sentence executive summary highlighting discovered accounts and identities. "
-            "Do NOT show reasoning, thoughts, or bullet points. Output clean plain text only."
+            "You are an expert OSINT analyst. Produce concise, objective executive briefings and precise "
+            "machine-readable metadata. Never reveal internal chain-of-thought. Follow format rules exactly."
         )
 
-        platforms_summary = ", ".join([f"{f.get('site')} (@{f.get('username')})" for f in findings[:15]])
+        # Formatted profiles list
+        profiles_list = [
+            {"site": f.get("site"), "username": f.get("username"), "profile_url": f.get("profile_url")}
+            for f in findings[:20]
+        ]
+
+        # Exact requested user prompt template
         user_prompt = (
             f"Target: {target_name}\n"
             f"Location: {location or 'Unknown'}\n"
-            f"Discovered Profiles ({len(findings)} Total): {platforms_summary}\n\n"
-            "Provide the executive summary."
+            f"Discovered profiles (list): {json.dumps(profiles_list)}\n"
+            f"Email findings: {json.dumps(email_info) if email_info else 'None'}\n"
+            f"Phone findings: {json.dumps(phone_info) if phone_info else 'None'}\n\n"
+            "Instructions:\n\n"
+            "Output exactly two items: (A) a plain-text executive briefing of 2–3 sentences (no markdown, no bullets), "
+            "and (B) a JSON object on a separate line (no code fences) matching the schema below. "
+            "Do NOT include any explanatory text beyond these two items.\n"
+            "The briefing must be objective, concise, and highlight any verified_identities. "
+            "If none are verified, state the inferred identity and label it inferred.\n"
+            "JSON schema: {\"briefing\":string,\"confidence\":int (0-100),\"verified_identities\": [string],\"inferred_identity\": string or null,\"evidence\":[{\"site\":string,\"username\":string,\"url\":string,\"corroboration\":string}], \"rationale\": string (<=30 words)}.\n"
+            "confidence is a numeric score based on evidence quantity/quality (0 if none). "
+            "verified_identities only list identities explicitly verified by platforms; otherwise leave empty and populate inferred_identity.\n"
+            "evidence must contain up to 5 strongest items with direct profile URLs. If none, set evidence:[].\n"
+            "If uncertain, put confidence:0 and set briefing to \"No verifiable accounts found.\"\n"
+            "STRICT: No chain-of-thought, no extra commentary. Return only: first the 2–3 sentence briefing, then the JSON object on the next line."
         )
 
-        resp = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.2)
-        return strip_reasoning_tags(resp) if resp else None
+        raw_output = await cls.query_llm(provider, api_key, model, host, system_prompt, user_prompt, temperature=0.1)
+        if not raw_output:
+            return None
+
+        # Parse the response: Extract JSON object & text briefing
+        briefing_text = ""
+        metadata_obj: Dict[str, Any] = {}
+
+        # Look for JSON block in response
+        json_match = re.search(r'\{.*\"confidence\".*\}', raw_output, flags=re.DOTALL)
+        if json_match:
+            try:
+                metadata_obj = json.loads(json_match.group(0))
+            except Exception:
+                pass
+
+        # Text before JSON is the executive briefing
+        if json_match:
+            briefing_text = raw_output[:json_match.start()].strip()
+        else:
+            briefing_text = raw_output.strip()
+
+        # Fallback fields if LLM omitted any
+        if not metadata_obj:
+            # Build valid metadata object from findings
+            evidence_items = [
+                {"site": f.get("site"), "username": f.get("username"), "url": f.get("profile_url"), "corroboration": "Discovered profile"}
+                for f in findings[:5]
+            ]
+            conf = min(95, 40 + len(findings) * 10) if findings else 0
+            metadata_obj = {
+                "briefing": briefing_text or f"Discovered {len(findings)} active platform profiles for target {target_name}.",
+                "confidence": conf,
+                "verified_identities": [],
+                "inferred_identity": target_name,
+                "evidence": evidence_items,
+                "rationale": "Direct cross-platform reconnaissance match"
+            }
+        else:
+            if not briefing_text and metadata_obj.get("briefing"):
+                briefing_text = metadata_obj.get("briefing", "")
+
+        return {
+            "briefing": briefing_text or metadata_obj.get("briefing", ""),
+            "confidence": metadata_obj.get("confidence", 80),
+            "verified_identities": metadata_obj.get("verified_identities", []),
+            "inferred_identity": metadata_obj.get("inferred_identity"),
+            "evidence": metadata_obj.get("evidence", []),
+            "rationale": metadata_obj.get("rationale", "")
+        }

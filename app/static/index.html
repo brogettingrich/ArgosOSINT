@@ -74,11 +74,11 @@
                 <span>Enable Permutation Generation (Syllable decomposition, country suffix, letter doubling)</span>
               </label>
 
-              <!-- Offline-only Systematic Digit Collision Toggle (shows when AI is offline) -->
+              <!-- Offline-only Systematic Digit Collision Toggle -->
               <div id="offline-digit-container" style="display:none;margin-left:22px;">
                 <label class="checkbox-label" style="color:var(--status-warn);">
-                  <input type="checkbox" id="chk-digits">
-                  <span>Enable Offline Systematic Digit Collisions (e.g. handle1, handle2, handle3, handle99)</span>
+                  <input type="checkbox" id="chk-digits" checked>
+                  <span>Enable Systematic Digit Collisions (e.g. handle1, handle2, handle3, handle99)</span>
                 </label>
               </div>
             </div>
@@ -104,13 +104,18 @@
         </div>
       </div>
 
-      <!-- AI Executive Intelligence Briefing Card -->
+      <!-- Enhanced AI Executive Intelligence Briefing Card -->
       <div id="ai-briefing-card" class="briefing-card" style="display:none;">
         <div class="briefing-header">
-          <span>AI EXECUTIVE INTELLIGENCE BRIEFING</span>
-          <span id="briefing-model-tag" class="category-tag">AI REASONING</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span>AI EXECUTIVE INTELLIGENCE BRIEFING</span>
+            <span id="briefing-confidence-badge" class="corrob-badge exact">90% CONFIDENCE</span>
+          </div>
+          <span id="briefing-identity-tag" class="category-tag">INFERRED IDENTITY</span>
         </div>
         <p id="briefing-text" class="briefing-body"></p>
+        <div id="briefing-rationale" style="font-size:11px;color:var(--text-secondary);margin-top:6px;font-style:italic;"></div>
+        <div id="briefing-evidence-row" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;"></div>
       </div>
 
       <!-- Results Header & Actions -->
@@ -158,7 +163,7 @@
       </div>
       <table class="history-table">
         <thead>
-          <tr><th>Target</th><th>Seed Parameter</th><th>Findings</th><th>Timestamp</th></tr>
+          <tr><th>Target</th><th>Seed Parameter</th><th>Confidence</th><th>Findings</th><th>Timestamp</th></tr>
         </thead>
         <tbody id="history-tbody"></tbody>
       </table>
@@ -178,7 +183,7 @@
           <label class="input-label">AI Reasoning Provider</label>
           <select id="setting-provider" class="form-input">
             <option value="groq">Groq Cloud API (Recommended - 500+ tokens/sec)</option>
-            <option value="local">Local AI Mode (Ollama / EnclaveLM / Local Host)</option>
+            <option value="local">Local AI Mode (Ollama / LM Studio)</option>
           </select>
         </div>
 
@@ -190,7 +195,6 @@
           </div>
         </div>
 
-        <!-- Clean 3-Model Selector Dropdown -->
         <div class="input-group" style="margin-bottom: 14px;">
           <label class="input-label">Model Identifier</label>
           <select id="setting-model-select" class="form-input"></select>
@@ -198,7 +202,7 @@
 
         <div id="group-ollama-host" class="input-group" style="margin-bottom: 14px; display: none;">
           <label class="input-label">Local Host Endpoint URL</label>
-          <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434" placeholder="e.g. http://127.0.0.1:11434 or http://127.0.0.1:8000">
+          <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434" placeholder="e.g. http://127.0.0.1:11434">
         </div>
 
         <div class="input-group" style="margin-bottom: 20px;">

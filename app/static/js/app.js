@@ -1,6 +1,7 @@
 let currentFindings = [];
 let currentEmailInfo = null;
 let currentPhoneInfo = null;
+let currentBriefingData = null;
 let graphVisualizer = null;
 let currentEventSource = null;
 let activeCategoryFilter = 'all';
@@ -8,9 +9,10 @@ let activePlatformFilter = 'all';
 let isAIOnline = false;
 
 const FALLBACK_GROQ_MODELS = [
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Primary - 800+ tok/s)' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Secondary - Deep Reasoning)' },
-  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (Fallback)' }
+  { id: 'openai/gpt-oss-20b', name: 'OpenAI GPT-OSS 20B (Primary - Ultra-Fast)' },
+  { id: 'openai/gpt-oss-120b', name: 'OpenAI GPT-OSS 120B (Secondary - Deep Reasoning)' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant' },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile' }
 ];
 
 const LOCAL_MODELS = [
@@ -122,6 +124,7 @@ function setupDismissControls() {
       currentFindings = [];
       currentEmailInfo = null;
       currentPhoneInfo = null;
+      currentBriefingData = null;
       document.getElementById('findings-count').innerText = '0 Findings';
       document.getElementById('ai-briefing-card').style.display = 'none';
       updateSubFilterBar();
@@ -248,7 +251,6 @@ async function setupSettingsModal() {
   providerSelect.addEventListener('change', updateVisibility);
   updateVisibility();
 
-  // Auto-refresh model list when user pastes an API key
   let keyDebounce;
   keyInput.addEventListener('input', () => {
     clearTimeout(keyDebounce);
@@ -389,12 +391,12 @@ function setupFormSubmit() {
 
   document.getElementById('btn-export-json').addEventListener('click', () => {
     const target = document.getElementById('input-username').value || 'Target';
-    Exporter.exportJSON(target, currentFindings, currentEmailInfo, currentPhoneInfo);
+    Exporter.exportJSON(target, currentFindings, currentEmailInfo, currentPhoneInfo, currentBriefingData);
   });
 
   document.getElementById('btn-export-html').addEventListener('click', () => {
     const target = document.getElementById('input-username').value || 'Target';
-    Exporter.exportHTML(target, currentFindings);
+    Exporter.exportHTML(target, currentFindings, currentBriefingData);
   });
 }
 
@@ -415,6 +417,7 @@ function startReconScan() {
   currentFindings = [];
   currentEmailInfo = null;
   currentPhoneInfo = null;
+  currentBriefingData = null;
   document.getElementById('results-grid').innerHTML = '';
   document.getElementById('progress-panel').style.display = 'block';
   document.getElementById('findings-count').innerText = '0 Findings';
@@ -467,8 +470,44 @@ function startReconScan() {
     if (data.type === 'ai_briefing') {
       const card = document.getElementById('ai-briefing-card');
       const text = document.getElementById('briefing-text');
+      const confBadge = document.getElementById('briefing-confidence-badge');
+      const identTag = document.getElementById('briefing-identity-tag');
+      const rationaleEl = document.getElementById('briefing-rationale');
+      const evidenceRow = document.getElementById('briefing-evidence-row');
+
+      currentBriefingData = data.briefing;
+
       if (card && text) {
-        text.innerText = data.briefing;
+        text.innerText = data.briefing.briefing || data.briefing;
+        
+        if (confBadge && data.briefing.confidence !== undefined) {
+          confBadge.innerText = `${data.briefing.confidence}% CONFIDENCE`;
+        }
+
+        if (identTag) {
+          if (data.briefing.verified_identities && data.briefing.verified_identities.length > 0) {
+            identTag.innerText = `VERIFIED: ${data.briefing.verified_identities.join(', ')}`;
+            identTag.style.color = 'var(--status-found)';
+          } else if (data.briefing.inferred_identity) {
+            identTag.innerText = `INFERRED: ${data.briefing.inferred_identity}`;
+            identTag.style.color = 'var(--status-warn)';
+          } else {
+            identTag.innerText = 'IDENTITY: INFERRED';
+          }
+        }
+
+        if (rationaleEl && data.briefing.rationale) {
+          rationaleEl.innerText = `Rationale: ${data.briefing.rationale}`;
+        }
+
+        if (evidenceRow && Array.isArray(data.briefing.evidence) && data.briefing.evidence.length > 0) {
+          evidenceRow.innerHTML = data.briefing.evidence.map(ev => `
+            <a href="${ev.url}" target="_blank" rel="noopener" class="sub-chip" style="font-size:10px;text-decoration:none;">
+              ${ev.site} (@${ev.username}) [↗]
+            </a>
+          `).join('');
+        }
+
         card.style.display = 'block';
       }
     }
@@ -600,7 +639,7 @@ async function loadHistory() {
   if (!tbody) return;
 
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#666;">No recorded dossiers yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#666;">No recorded dossiers yet.</td></tr>';
     return;
   }
 
@@ -608,6 +647,7 @@ async function loadHistory() {
     <tr>
       <td><strong>${d.target_name}</strong></td>
       <td><code>${d.seed_username || d.seed_email || d.seed_phone || '-'}</code></td>
+      <td><span class="corrob-badge">${d.confidence !== null && d.confidence !== undefined ? `${d.confidence}%` : 'N/A'}</span></td>
       <td><span class="corrob-badge">${d.found_count} Accounts</span></td>
       <td>${d.created_at}</td>
     </tr>

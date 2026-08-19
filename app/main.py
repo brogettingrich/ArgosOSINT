@@ -38,7 +38,7 @@ class ScanRequest(BaseModel):
 class SettingsPayload(BaseModel):
     ai_provider: str = "groq"
     ai_api_key: str = ""
-    ai_model: str = "llama-3.1-8b-instant"
+    ai_model: str = "openai/gpt-oss-20b"
     ai_host: str = "http://127.0.0.1:11434"
     enable_ai: bool = True
 
@@ -188,7 +188,7 @@ async def sse_scan_stream(
             clean_seed = username.strip().lower()
             usernames_to_probe = [clean_seed]
 
-            # 1. Deterministic Context Clue & Syllable/Country Matrix (Always active)
+            # 1. Deterministic Context Clue & Syllable/Country Matrix
             context_perms = generate_permutations(
                 seed=clean_seed,
                 real_names=real_name or "",
@@ -243,10 +243,10 @@ async def sse_scan_stream(
                 yield f"data: {json.dumps(payload)}\n\n"
                 await asyncio.sleep(0.002)
 
-        # 3. AI Executive Intelligence Briefing
+        # 3. AI Executive Intelligence Briefing & Structured Metadata
         if ai_enabled and (discovered_findings or email_info or phone_info):
-            yield f"data: {json.dumps({'type': 'status_update', 'message': 'Synthesizing executive AI intelligence briefing...'})}\n\n"
-            briefing = await AIEngine.generate_dossier_briefing(
+            yield f"data: {json.dumps({'type': 'status_update', 'message': 'Synthesizing executive AI intelligence briefing & metadata...'})}\n\n"
+            briefing_obj = await AIEngine.generate_dossier_briefing(
                 settings=settings,
                 target_name=target_label,
                 findings=discovered_findings,
@@ -254,8 +254,9 @@ async def sse_scan_stream(
                 phone_info=phone_info,
                 location=location or ""
             )
-            if briefing:
-                yield f"data: {json.dumps({'type': 'ai_briefing', 'briefing': briefing})}\n\n"
+            if briefing_obj:
+                repo.update_dossier_ai_briefing(dossier_id, briefing_obj)
+                yield f"data: {json.dumps({'type': 'ai_briefing', 'briefing': briefing_obj})}\n\n"
 
         yield f"data: {json.dumps({'type': 'complete', 'dossier_id': dossier_id})}\n\n"
 
