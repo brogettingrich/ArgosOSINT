@@ -21,44 +21,18 @@ def get_domain_semaphore(url: str) -> asyncio.Semaphore:
     return DOMAIN_SEMAPHORES[domain]
 
 CHALLENGE_PATTERNS = [
-    "checking your browser",
-    "just a moment...",
-    "cloudflare",
-    "attention required",
-    "challenge-platform",
     "cf-browser-verification",
+    "challenge-platform",
+    "<title>just a moment...</title>",
+    "<title>attention required",
+    "checking your browser before accessing",
     "sina visitor system",
-    "user not found",
-    "page not found",
-    "account doesn't exist",
+    "<title>404 not found",
+    "<title>page not found",
     "couldn't find this account",
     "sorry, this page isn't available",
-    "accept tips with 0-5%"
+    "this content isn't available right now"
 ]
-
-def is_name_nearly_identical(candidate_name: str, target_name: str, target_handle: str) -> bool:
-    if not candidate_name:
-        return False
-    c_clean = candidate_name.strip().lower()
-    t_clean = target_name.strip().lower() if target_name else ""
-    h_clean = target_handle.strip().lower() if target_handle else ""
-
-    if t_clean:
-        if t_clean == c_clean or t_clean in c_clean or c_clean in t_clean:
-            return True
-        c_tokens = set(re.findall(r'[a-zA-Z]{3,}', c_clean))
-        t_tokens = set(re.findall(r'[a-zA-Z]{3,}', t_clean))
-        if c_tokens and t_tokens and len(c_tokens.intersection(t_tokens)) >= min(len(t_tokens), 2):
-            return True
-        return False
-
-    if h_clean:
-        h_words = set(re.findall(r'[a-zA-Z]{3,}', h_clean.replace('_', ' ').replace('.', ' ')))
-        c_words = set(re.findall(r'[a-zA-Z]{3,}', c_clean))
-        if h_words and c_words and len(h_words.intersection(c_words)) > 0:
-            return True
-
-    return False
 
 def extract_html_metadata(html_text: str) -> Dict[str, Any]:
     meta = {
@@ -155,7 +129,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                     "avatar_url": m_img.group(1).strip() if m_img else None
                                 }
 
-                # 2. SPOTIFY PROBE (Strict OpenGraph Verification)
+                # 2. SPOTIFY PROBE
                 elif special_handler == "spotify":
                     sp_url = f"https://open.spotify.com/user/{u_clean}"
                     resp = await client.get(sp_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -174,7 +148,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                     "avatar_url": m_img.group(1) if m_img else None
                                 }
 
-                # 3. TWITCH PROBE (Strict Title Verification)
+                # 3. TWITCH PROBE
                 elif special_handler == "twitch":
                     tw_url = f"https://www.twitch.tv/{u_clean}"
                     resp = await client.get(tw_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
@@ -193,31 +167,7 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                                     "avatar_url": m_img.group(1) if m_img else None
                                 }
 
-                # 4. TIKTOK PROBE
-                elif special_handler == "tiktok":
-                    tt_url = f"https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{u_clean}"
-                    resp = await client.get(tt_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
-                    result["status_code"] = resp.status_code
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data.get("author_name") or data.get("title"):
-                            result["found"] = True
-                            result["metadata"] = {
-                                "display_name": data.get("author_name"),
-                                "bio": data.get("title"),
-                                "avatar_url": data.get("thumbnail_url")
-                            }
-
-                # 5. REDDIT PROBE
-                elif special_handler == "reddit":
-                    r_url = f"https://old.reddit.com/user/{u_clean}"
-                    resp = await client.get(r_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
-                    result["status_code"] = resp.status_code
-                    if resp.status_code == 200:
-                        result["found"] = True
-                        result["metadata"] = extract_html_metadata(resp.text)
-
-                # 6. FACEBOOK PROBE (Name Match Only)
+                # 4. FACEBOOK PROBE (Robust Public Profile Detection)
                 elif special_handler == "facebook":
                     fb_url = f"https://m.facebook.com/{u_clean}"
                     h_fb = {
@@ -232,37 +182,60 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                     result["status_code"] = resp.status_code
                     if resp.status_code == 200:
                         text = resp.text
-                        not_found_markers = [
-                            "this content isn't available right now",
-                            "this page isn't available",
-                            "the link you followed may be broken",
-                            "page not found"
-                        ]
+                        m_og_title = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\'](.*?)["\']', text, re.I)
+                        m_og_img = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', text, re.I)
                         title_m = re.search(r'<title>(.*?)</title>', text, re.I)
                         title_val = html.unescape(title_m.group(1)).strip() if title_m else ""
-                        is_not_found = any(m in text.lower() for m in not_found_markers) or title_val.lower() in ["facebook", "log in to facebook", "error"]
 
-                        if not is_not_found:
-                            if is_name_nearly_identical(title_val, seed_name, u_clean):
-                                result["found"] = True
-                                intro_snippets = re.findall(r'<div[^>]*class="[^"]*intro[^"]*"[^>]*>(.*?)</div>', text, re.I)
-                                intro_clean = " • ".join([re.sub(r'<[^>]+>', '', s).strip() for s in intro_snippets if s])
-                                post_snippets = re.findall(r'<div[^>]*class="[^"]*story_body_container[^"]*"[^>]*>(.*?)</div>', text, re.I)
-                                clean_posts = [re.sub(r'<[^>]+>', '', p).strip() for p in post_snippets[:2] if len(p) > 20]
+                        is_invalid = (
+                            any(m in text.lower() for m in ["this content isn't available right now", "this page isn't available", "page not found", "log into facebook"]) or
+                            title_val.lower() in ["facebook", "log in to facebook", "error"]
+                        )
 
-                                bio_combined = f"Facebook: {title_val}"
-                                if intro_clean:
-                                    bio_combined += f" | {intro_clean}"
-                                if clean_posts:
-                                    post_preview = clean_posts[0][:120].replace('"', "'")
-                                    bio_combined += f" | Recent post: '{post_preview}'"
+                        if not is_invalid:
+                            display_name = html.unescape(m_og_title.group(1)).strip() if m_og_title else title_val.split('•')[0].split('(')[0].strip()
+                            intro_snippets = re.findall(r'<div[^>]*class="[^"]*intro[^"]*"[^>]*>(.*?)</div>', text, re.I)
+                            intro_clean = " • ".join([re.sub(r'<[^>]+>', '', s).strip() for s in intro_snippets if s])
+                            post_snippets = re.findall(r'<div[^>]*class="[^"]*story_body_container[^"]*"[^>]*>(.*?)</div>', text, re.I)
+                            clean_posts = [re.sub(r'<[^>]+>', '', p).strip() for p in post_snippets[:2] if len(p) > 20]
 
-                                result["metadata"] = {
-                                    "display_name": title_val,
-                                    "bio": bio_combined
-                                }
-                            else:
-                                result["found"] = False
+                            bio_combined = f"Facebook: {display_name}"
+                            if intro_clean:
+                                bio_combined += f" | {intro_clean}"
+                            if clean_posts:
+                                post_preview = clean_posts[0][:120].replace('"', "'")
+                                bio_combined += f" | Recent post: '{post_preview}'"
+
+                            result["found"] = True
+                            result["metadata"] = {
+                                "display_name": display_name,
+                                "bio": bio_combined,
+                                "avatar_url": m_og_img.group(1).strip() if m_og_img else None
+                            }
+
+                # 5. TIKTOK PROBE
+                elif special_handler == "tiktok":
+                    tt_url = f"https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{u_clean}"
+                    resp = await client.get(tt_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("author_name") or data.get("title"):
+                            result["found"] = True
+                            result["metadata"] = {
+                                "display_name": data.get("author_name"),
+                                "bio": data.get("title"),
+                                "avatar_url": data.get("thumbnail_url")
+                            }
+
+                # 6. REDDIT PROBE
+                elif special_handler == "reddit":
+                    r_url = f"https://old.reddit.com/user/{u_clean}"
+                    resp = await client.get(r_url, headers=COMMON_HEADERS, timeout=REQUEST_TIMEOUT)
+                    result["status_code"] = resp.status_code
+                    if resp.status_code == 200:
+                        result["found"] = True
+                        result["metadata"] = extract_html_metadata(resp.text)
 
                 # 7. BLUESKY PROBE
                 elif special_handler == "bluesky":
@@ -324,9 +297,16 @@ async def check_single_site(client: httpx.AsyncClient, site: Dict[str, Any], use
                     final_url = str(resp.url).lower()
                     text = resp.text.lower()
 
+                    is_handle_in_url = (
+                        f"/{u_clean}" in final_url or 
+                        f"@{u_clean}" in final_url or 
+                        f"//{u_clean}." in final_url or 
+                        f".{u_clean}." in final_url
+                    )
+
                     is_redirect_bounce = any(
                         p in final_url for p in ["/login", "/signin", "/signup", "/register", "404", "error", "/explore"]
-                    ) and not (f"/{u_clean}" in final_url or f"@{u_clean}" in final_url)
+                    ) and not is_handle_in_url
 
                     has_challenge_or_error = any(p in text for p in CHALLENGE_PATTERNS)
 

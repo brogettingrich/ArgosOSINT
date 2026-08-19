@@ -58,12 +58,14 @@ def generate_name_permutations(name: str, country_code: str = "") -> List[str]:
         f"{first[0]}.{last}",
         f"{first[0]}{last}",
         f"{last}_{first}",
-        f"{last}.{first}"
+        f"{last}.{first}",
+        f"{first}_{last[0]}"
     ])
 
     if country_code:
         variants.extend([
             f"{first}_{last}_{country_code}",
+            f"{first}.{last}.{country_code}",
             f"{first}{last}_{country_code}"
         ])
 
@@ -83,7 +85,7 @@ def generate_permutations(
 
     # 1. Exact Seed Identifier
     if seed_username:
-        clean_seed = seed_username.strip().lower()
+        clean_seed = seed_username.strip().lstrip('@').rstrip('/').lower()
         seen.add(clean_seed)
         results.append({
             "username": clean_seed,
@@ -93,7 +95,7 @@ def generate_permutations(
             "is_seed": True
         })
 
-        # Delimiter permutations (_ vs . vs none)
+        # Delimiter swaps (_ vs . vs none)
         for delim in ["_", ".", "-"]:
             if delim in clean_seed:
                 for target_delim in ["_", ".", ""]:
@@ -109,24 +111,7 @@ def generate_permutations(
                                 "is_seed": False
                             })
 
-        # If solid word (e.g. ozalmagor) and known_names given (e.g. Oz Almagor)
-        if known_names:
-            for name in known_names:
-                clean_n = re.sub(r'[^a-zA-Z0-9\s]', '', name.strip().lower()).split()
-                if len(clean_n) >= 2:
-                    f, l = clean_n[0], clean_n[-1]
-                    for joined in [f"{f}_{l}", f"{f}.{l}"]:
-                        if joined not in seen:
-                            seen.add(joined)
-                            results.append({
-                                "username": joined,
-                                "category": "Name Construction",
-                                "rule": f"Joined name variant '{joined}'",
-                                "similarity": 92,
-                                "is_seed": False
-                            })
-
-        # Country code suffix (at most 2 high-probability variants)
+        # Suffix variations for country
         if country_code:
             for cv in [f"{clean_seed}_{country_code}", f"{clean_seed}.{country_code}"]:
                 if cv not in seen:
@@ -139,8 +124,8 @@ def generate_permutations(
                         "is_seed": False
                     })
 
-    # 2. Known names if no seed username was provided
-    elif known_names:
+    # 2. Known Names Handling
+    if known_names:
         for name in known_names:
             name_perms = generate_name_permutations(name, country_code=country_code)
             for i, np in enumerate(name_perms):
@@ -150,8 +135,8 @@ def generate_permutations(
                         "username": np,
                         "category": "Name Construction",
                         "rule": f"Constructed handle from name '{name}'",
-                        "similarity": 95 if i == 0 else 88,
-                        "is_seed": (i == 0)
+                        "similarity": 95 if i == 0 and not seed_username else 88,
+                        "is_seed": (i == 0 and not seed_username)
                     })
 
     return results
