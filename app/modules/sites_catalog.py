@@ -136,12 +136,6 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "error_code": 404
     },
     {
-        "name": "PyPI", "category": "Developer",
-        "url_template": "https://pypi.org/user/{}/",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
         "name": "HackerNews", "category": "Developer",
         "url_template": "https://news.ycombinator.com/user?id={}",
         "check_type": "message",
