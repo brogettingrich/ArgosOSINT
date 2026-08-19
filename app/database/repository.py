@@ -39,7 +39,7 @@ def get_all_settings() -> Dict[str, str]:
         conn.close()
 
 def create_dossier(target_name: str, seed_username: str = "", seed_email: str = "", seed_phone: str = "", notes: str = "") -> str:
-    dossier_id = str(uuid.uuid4())[:8]
+    dossier_id = str(uuid.uuid4())
     conn = get_connection()
     try:
         conn.execute(
@@ -53,27 +53,45 @@ def create_dossier(target_name: str, seed_username: str = "", seed_email: str = 
         conn.close()
 
 def save_scan_result(dossier_id: str, item: Dict[str, Any]):
-    conn = get_connection()
-    try:
-        conn.execute(
-            """INSERT INTO scan_results (dossier_id, site, category, username, profile_url, found, status_code, latency_ms, corroboration_score, evidence)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                dossier_id,
-                item.get("site"),
-                item.get("category"),
-                item.get("username"),
-                item.get("profile_url"),
-                1 if item.get("found") else 0,
-                item.get("status_code", 0),
-                item.get("latency_ms", 0),
-                item.get("corroboration", {}).get("score", 0),
-                json.dumps(item.get("corroboration", {}).get("evidence", []))
+    # Add a small retry loop to handle transient SQLITE_BUSY locking under concurrency.
+    attempts = 3
+    delay = 0.05
+    for attempt in range(attempts):
+        conn = get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO scan_results (dossier_id, site, category, username, profile_url, found, status_code, latency_ms, corroboration_score, evidence)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    dossier_id,
+                    item.get("site"),
+                    item.get("category"),
+                    item.get("username"),
+                    item.get("profile_url"),
+                    1 if item.get("found") else 0,
+                    item.get("status_code", 0),
+                    item.get("latency_ms", 0),
+                    item.get("corroboration", {}).get("score", 0),
+                    json.dumps(item.get("corroboration", {}).get("evidence", []))
+                )
             )
-        )
-        conn.commit()
-    finally:
-        conn.close()
+            conn.commit()
+            return
+        except Exception:
+            # On failure, close and retry a couple times
+            conn.close()
+            if attempt < attempts - 1:
+                import time
+                time.sleep(delay)
+                delay *= 2
+                continue
+            else:
+                raise
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 def list_dossiers() -> List[Dict[str, Any]]:
     conn = get_connection()

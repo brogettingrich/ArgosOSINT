@@ -2,7 +2,7 @@ import asyncio
 import json
 import httpx
 from typing import List, Dict, Any, Optional
-from app.config import COMMON_HEADERS, REQUEST_TIMEOUT, MAX_CONCURRENT_REQUESTS
+from app.config import COMMON_HEADERS, REQUEST_TIMEOUT, MAX_CONCURRENT_REQUESTS, HTTP_VERIFY
 
 SITES_DB = [
     # ── Social & Community Platforms ──
@@ -214,7 +214,27 @@ async def probe_single_target(client: httpx.AsyncClient, site: Dict[str, Any], u
         elif check_type in ["pinterest_strict", "youtube_strict", "reddit_strict"]:
             headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-        resp = await client.get(url, headers=headers, timeout=REQUEST_TIMEOUT, follow_redirects=True)
+        # Basic retry/backoff for transient errors and server 5xx/429 responses
+        attempts = 3
+        backoff = 0.1
+        resp = None
+        for attempt in range(attempts):
+            try:
+                resp = await client.get(url, headers=headers, timeout=REQUEST_TIMEOUT, follow_redirects=True)
+                # Retry on rate limit or server errors
+                if resp.status_code in (429,) or 500 <= resp.status_code < 600:
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                break
+            except (httpx.TimeoutException, httpx.RequestError):
+                await asyncio.sleep(backoff)
+                backoff *= 2
+                continue
+
+        if resp is None:
+            raise httpx.RequestError("Failed to fetch after retries")
+
         t1 = asyncio.get_event_loop().time()
         result["status_code"] = resp.status_code
         result["latency_ms"] = int((t1 - t0) * 1000)
@@ -328,16 +348,29 @@ async def scan_usernames_async(usernames: List[str], concurrency: int = MAX_CONC
     semaphore = asyncio.Semaphore(concurrency)
     limits = httpx.Limits(max_keepalive_connections=concurrency, max_connections=concurrency * 2)
 
-    async with httpx.AsyncClient(limits=limits, verify=False) as client:
+    async with httpx.AsyncClient(limits=limits, verify=HTTP_VERIFY) as client:
         async def bounded_probe(site, u):
             async with semaphore:
                 return await probe_single_target(client, site, u)
 
-        tasks = []
+        # Create and maintain a bounded set of in-flight tasks to avoid building a huge task list
+        in_flight = set()
+        MAX_IN_FLIGHT = max(10, concurrency * 3)
+
         for u in usernames:
             for site in SITES_DB:
-                tasks.append(bounded_probe(site, u))
+                task = asyncio.create_task(bounded_probe(site, u))
+                in_flight.add(task)
 
-        for future in asyncio.as_completed(tasks):
-            res = await future
-            yield res
+                if len(in_flight) >= MAX_IN_FLIGHT:
+                    done, _ = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+                    for d in done:
+                        in_flight.remove(d)
+                        yield d.result()
+
+        # drain the remaining tasks
+        while in_flight:
+            done, _ = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+            for d in done:
+                in_flight.remove(d)
+                yield d.result()

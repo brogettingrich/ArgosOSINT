@@ -6,57 +6,76 @@ from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("ArgosAI")
 
-GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
-FALLBACK_GROQ_MODEL = "llama-3.3-70b-versatile"
-DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
-DEFAULT_OLLAMA_MODEL = "llama3.2"
-
-VERIFIED_GROQ_MODELS = [
-    "llama-3.1-8b-instant",
-    "llama-3.3-70b-versatile",
-    "gemma2-9b-it"
-]
+DEFAULT_LOCAL_HOST = "http://127.0.0.1:11434"
+DEFAULT_LOCAL_MODEL = "llama3.2"
 
 class AIEngine:
     @staticmethod
     async def test_connection(provider: str, api_key: str = "", model: str = "", host: str = "") -> Dict[str, Any]:
         try:
             if provider == "groq":
-                clean_key = api_key.strip()
+                clean_key = (api_key or "").strip().strip('"').strip("'")
                 if not clean_key:
-                    return {"success": False, "status": "no_key", "error": "No Groq API key configured"}
-                headers = {"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"}
-                clean_model = model.strip() or DEFAULT_GROQ_MODEL
-                
-                # Sanitize deprecated model names if user had old cached string
+                    return {"success": False, "status": "no_key", "error": "Groq API Key is required"}
+
+                clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
                 if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b"]:
                     clean_model = "llama-3.3-70b-versatile"
-                
+
+                headers = {
+                    "Authorization": f"Bearer {clean_key}",
+                    "Content-Type": "application/json"
+                }
                 payload = {
                     "model": clean_model,
                     "messages": [{"role": "user", "content": "Respond with OK"}],
-                    "max_tokens": 5
+                    "max_tokens": 10
                 }
-                async with httpx.AsyncClient(timeout=8.0) as client:
-                    resp = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
+
+                async with httpx.AsyncClient(timeout=8.0, verify=False) as client:
+                    resp = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
                     if resp.status_code == 200:
                         return {"success": True, "status": "online", "message": f"Groq Engine Online ({clean_model})"}
+                    
                     try:
-                        err_data = resp.json()
-                        err_msg = err_data.get("error", {}).get("message", resp.text)
-                    except:
+                        err_json = resp.json()
+                        err_msg = err_json.get("error", {}).get("message", resp.text)
+                    except Exception:
                         err_msg = resp.text
                     return {"success": False, "status": "error", "error": f"Groq ({resp.status_code}): {err_msg}"}
 
-            elif provider == "ollama":
-                ollama_url = (host.strip() or DEFAULT_OLLAMA_HOST).rstrip("/") + "/api/tags"
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    resp = await client.get(ollama_url)
-                    if resp.status_code == 200:
-                        clean_model = model.strip() or DEFAULT_OLLAMA_MODEL
-                        return {"success": True, "status": "online", "message": f"Local Ollama Online ({clean_model})"}
-                    return {"success": False, "status": "error", "error": f"Ollama Error ({resp.status_code})"}
+            elif provider in ["ollama", "local"]:
+                clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
+                clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
+
+                async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+                    # 1. Try standard Ollama native API
+                    try:
+                        r_ollama = await client.get(f"{clean_host}/api/tags", timeout=3.0)
+                        if r_ollama.status_code == 200:
+                            return {"success": True, "status": "online", "message": f"Local Ollama Online ({clean_model})"}
+                    except Exception:
+                        pass
+
+                    # 2. Try OpenAI-compatible local endpoints (LM Studio, EnclaveLM, vLLM, LocalAI)
+                    try:
+                        r_openai = await client.get(f"{clean_host}/v1/models", timeout=3.0)
+                        if r_openai.status_code in [200, 401]:
+                            return {"success": True, "status": "online", "message": f"Local AI Server Online ({clean_model})"}
+                    except Exception:
+                        pass
+
+                    # 3. Try standard root ping
+                    try:
+                        r_root = await client.get(clean_host, timeout=3.0)
+                        if r_root.status_code < 500:
+                            return {"success": True, "status": "online", "message": f"Local AI Host Reachable ({clean_model})"}
+                    except Exception as e:
+                        return {"success": False, "status": "offline", "error": f"Cannot connect to {clean_host}: {type(e).__name__}"}
+
+                    return {"success": False, "status": "offline", "error": f"Local AI at {clean_host} returned no response"}
 
             return {"success": False, "status": "error", "error": f"Unknown provider: {provider}"}
         except Exception as e:
@@ -66,14 +85,18 @@ class AIEngine:
     async def query_llm(provider: str, api_key: str, model: str, host: str, system_prompt: str, user_prompt: str, temperature: float = 0.2) -> Optional[str]:
         try:
             if provider == "groq":
-                clean_key = api_key.strip()
+                clean_key = (api_key or "").strip().strip('"').strip("'")
                 if not clean_key:
                     return None
-                headers = {"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"}
-                clean_model = model.strip() or DEFAULT_GROQ_MODEL
+
+                clean_model = (model or "").strip() or DEFAULT_GROQ_MODEL
                 if clean_model in ["llama-3.1-70b-versatile", "llama-3.1-70b"]:
                     clean_model = "llama-3.3-70b-versatile"
 
+                headers = {
+                    "Authorization": f"Bearer {clean_key}",
+                    "Content-Type": "application/json"
+                }
                 payload = {
                     "model": clean_model,
                     "messages": [
@@ -83,41 +106,65 @@ class AIEngine:
                     "temperature": temperature,
                     "max_tokens": 800
                 }
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
+
+                async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+                    resp = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
                     if resp.status_code == 200:
                         data = resp.json()
                         return data["choices"][0]["message"]["content"].strip()
                     
-                    # Auto-fallback to primary model if the requested model threw an error
+                    # Auto fallback to primary 8B model if error
                     if resp.status_code in [400, 404] and clean_model != DEFAULT_GROQ_MODEL:
                         logger.warning(f"Retrying with fallback model {DEFAULT_GROQ_MODEL}")
                         payload["model"] = DEFAULT_GROQ_MODEL
-                        resp_fallback = await client.post(GROQ_ENDPOINT, headers=headers, json=payload)
+                        resp_fallback = await client.post(GROQ_CHAT_URL, headers=headers, json=payload)
                         if resp_fallback.status_code == 200:
                             data = resp_fallback.json()
                             return data["choices"][0]["message"]["content"].strip()
 
-            elif provider == "ollama":
-                ollama_url = (host.strip() or DEFAULT_OLLAMA_HOST).rstrip("/") + "/api/chat"
-                clean_model = model.strip() or DEFAULT_OLLAMA_MODEL
-                payload = {
-                    "model": clean_model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    "stream": False,
-                    "options": {"temperature": temperature}
-                }
-                async with httpx.AsyncClient(timeout=12.0) as client:
-                    resp = await client.post(ollama_url, json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        return data.get("message", {}).get("content", "").strip()
+            elif provider in ["ollama", "local"]:
+                clean_host = (host or "").strip().rstrip("/") or DEFAULT_LOCAL_HOST
+                clean_model = (model or "").strip() or DEFAULT_LOCAL_MODEL
+
+                async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+                    # 1. Try Ollama native chat endpoint
+                    try:
+                        ollama_payload = {
+                            "model": clean_model,
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            "stream": False,
+                            "options": {"temperature": temperature}
+                        }
+                        r_ollama = await client.post(f"{clean_host}/api/chat", json=ollama_payload)
+                        if r_ollama.status_code == 200:
+                            data = r_ollama.json()
+                            return data.get("message", {}).get("content", "").strip()
+                    except Exception:
+                        pass
+
+                    # 2. Try OpenAI-compatible local chat endpoint (/v1/chat/completions)
+                    try:
+                        openai_payload = {
+                            "model": clean_model,
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt}
+                            ],
+                            "temperature": temperature,
+                            "max_tokens": 800
+                        }
+                        r_openai = await client.post(f"{clean_host}/v1/chat/completions", json=openai_payload)
+                        if r_openai.status_code == 200:
+                            data = r_openai.json()
+                            return data["choices"][0]["message"]["content"].strip()
+                    except Exception:
+                        pass
 
         except Exception as e:
-            logger.warning(f"AI Query failed: {e}")
+            logger.warning(f"AI query failed: {e}")
         return None
 
     @classmethod

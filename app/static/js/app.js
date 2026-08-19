@@ -7,16 +7,16 @@ let activeCategoryFilter = 'all';
 let activePlatformFilter = 'all';
 let isAIOnline = false;
 
-// Exactly 3 verified active production models for Groq
+// Exactly 3 verified active models for Groq
 const GROQ_MODELS = [
   { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Primary - 800+ tok/s)' },
   { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Secondary - Deep Reasoning)' },
   { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT (Fallback)' }
 ];
 
-// Exactly 3 verified models for Ollama
-const OLLAMA_MODELS = [
-  { id: 'llama3.2', name: 'Llama 3.2 (Primary - Default)' },
+// Exactly 3 verified models for Local AI
+const LOCAL_MODELS = [
+  { id: 'llama3.2', name: 'Llama 3.2 (Primary)' },
   { id: 'llama3.1', name: 'Llama 3.1 (Secondary)' },
   { id: 'mistral', name: 'Mistral 7B (Fallback)' }
 ];
@@ -196,56 +196,51 @@ async function setupSettingsModal() {
   const testBtn = document.getElementById('btn-test-ai');
   const testStatus = document.getElementById('test-status-box');
 
-  let savedLocal = {};
-  try {
-    savedLocal = JSON.parse(localStorage.getItem('argos_ai_settings') || '{}');
-  } catch(e) {}
-
-  const serverSettings = await fetch('/api/settings').then(r => r.json());
-  const currentSettings = { ...serverSettings, ...savedLocal };
-
-  const populateModels = (provider, selectedModel) => {
-    const list = (provider === 'groq') ? GROQ_MODELS : OLLAMA_MODELS;
+  const populateModelList = (provider, currentVal) => {
+    const list = (provider === 'groq') ? GROQ_MODELS : LOCAL_MODELS;
     modelSelect.innerHTML = list.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
 
-    // Handle migration from old deprecated models
-    let targetModel = selectedModel;
-    if (targetModel === 'llama-3.1-70b-versatile' || targetModel === 'llama-3.1-70b') {
-      targetModel = 'llama-3.3-70b-versatile';
+    let target = currentVal || list[0].id;
+    if (target === 'llama-3.1-70b-versatile' || target === 'llama-3.1-70b') {
+      target = 'llama-3.3-70b-versatile';
     }
 
-    const matched = list.find(m => m.id === targetModel);
+    const matched = list.find(m => m.id === target);
     if (matched) {
-      modelSelect.value = targetModel;
+      modelSelect.value = target;
     } else {
       modelSelect.value = list[0].id;
     }
   };
 
-  if (currentSettings.ai_provider) providerSelect.value = currentSettings.ai_provider;
-  if (currentSettings.ai_api_key) keyInput.value = currentSettings.ai_api_key;
-  if (currentSettings.ai_host) hostInput.value = currentSettings.ai_host;
-  enableAiChk.checked = currentSettings.enable_ai !== false;
-
-  populateModels(providerSelect.value, currentSettings.ai_model || 'llama-3.1-8b-instant');
-
   const updateVisibility = () => {
     if (providerSelect.value === 'groq') {
       groupKey.style.display = 'flex';
       groupHost.style.display = 'none';
-      populateModels('groq', modelSelect.value);
+      populateModelList('groq', modelSelect.value);
     } else {
       groupKey.style.display = 'none';
       groupHost.style.display = 'flex';
-      populateModels('ollama', modelSelect.value);
+      populateModelList('local', modelSelect.value);
     }
   };
+
+  // Load Initial Settings from Server API
+  try {
+    const serverSettings = await fetch('/api/settings').then(r => r.json());
+    if (serverSettings.ai_provider) providerSelect.value = serverSettings.ai_provider;
+    if (serverSettings.ai_api_key) keyInput.value = serverSettings.ai_api_key;
+    if (serverSettings.ai_host) hostInput.value = serverSettings.ai_host;
+    enableAiChk.checked = serverSettings.enable_ai !== false;
+    populateModelList(providerSelect.value, serverSettings.ai_model);
+  } catch (e) {}
 
   providerSelect.addEventListener('change', updateVisibility);
   updateVisibility();
 
   openBtn.addEventListener('click', () => {
     modal.style.display = 'flex';
+    testStatus.style.display = 'none';
   });
 
   closeBtn.addEventListener('click', () => {
@@ -283,10 +278,10 @@ async function setupSettingsModal() {
 
     if (res.success) {
       testStatus.style.color = 'var(--status-found)';
-      testStatus.innerText = res.message;
+      testStatus.innerText = res.message || 'AI: Online';
     } else {
       testStatus.style.color = 'var(--status-error)';
-      testStatus.innerText = `Failed: ${res.error}`;
+      testStatus.innerText = `Failed: ${res.error || 'Connection failed'}`;
     }
   });
 

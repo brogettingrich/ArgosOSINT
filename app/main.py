@@ -12,7 +12,7 @@ from app.database.schema import init_db
 from app.database import repository as repo
 from app.core.permutations import generate_permutations
 from app.core.corroboration import score_profile_corroboration
-from app.core.ai_engine import AIEngine, DEFAULT_GROQ_MODEL
+from app.core.ai_engine import AIEngine, DEFAULT_GROQ_MODEL, DEFAULT_LOCAL_HOST, DEFAULT_LOCAL_MODEL
 from app.modules.username_probe import scan_usernames_async, SITES_DB
 from app.modules.email_probe import probe_email_intelligence
 from app.modules.phone_probe import analyze_phone_number
@@ -56,23 +56,21 @@ async def serve_manifest():
 async def get_settings():
     settings = repo.get_all_settings()
     raw_key = settings.get("ai_api_key", "")
-    masked_key = (raw_key[:4] + "..." + raw_key[-4:]) if len(raw_key) > 8 else raw_key
     return {
         "ai_provider": settings.get("ai_provider", "groq"),
         "ai_api_key": raw_key,
-        "ai_api_key_masked": masked_key,
         "ai_model": settings.get("ai_model", DEFAULT_GROQ_MODEL),
-        "ai_host": settings.get("ai_host", "http://127.0.0.1:11434"),
+        "ai_host": settings.get("ai_host", DEFAULT_LOCAL_HOST),
         "enable_ai": settings.get("enable_ai", "true").lower() == "true"
     }
 
 @app.post("/api/settings")
 async def save_settings(payload: SettingsPayload):
     repo.set_setting("ai_provider", payload.ai_provider)
-    if payload.ai_api_key:
+    if payload.ai_api_key is not None:
         repo.set_setting("ai_api_key", payload.ai_api_key.strip())
     repo.set_setting("ai_model", payload.ai_model.strip() or DEFAULT_GROQ_MODEL)
-    repo.set_setting("ai_host", payload.ai_host.strip())
+    repo.set_setting("ai_host", payload.ai_host.strip() or DEFAULT_LOCAL_HOST)
     repo.set_setting("enable_ai", "true" if payload.enable_ai else "false")
     return {"success": True, "message": "Settings saved successfully"}
 
@@ -82,7 +80,7 @@ async def check_ai_health():
     provider = settings.get("ai_provider", "groq")
     api_key = settings.get("ai_api_key", "")
     model = settings.get("ai_model", DEFAULT_GROQ_MODEL)
-    host = settings.get("ai_host", "http://127.0.0.1:11434")
+    host = settings.get("ai_host", DEFAULT_LOCAL_HOST)
     enable_ai = settings.get("enable_ai", "true").lower() == "true"
 
     if not enable_ai:
@@ -110,7 +108,7 @@ async def check_ai_health():
 
 @app.post("/api/settings/test")
 async def test_ai_settings(payload: SettingsPayload):
-    key_to_test = payload.ai_api_key or repo.get_setting("ai_api_key", "")
+    key_to_test = payload.ai_api_key.strip() if payload.ai_api_key else repo.get_setting("ai_api_key", "")
     res = await AIEngine.test_connection(
         provider=payload.ai_provider,
         api_key=key_to_test,
@@ -157,7 +155,7 @@ async def sse_scan_stream(
     )
 
     settings = repo.get_all_settings()
-    ai_enabled = settings.get("enable_ai", "true").lower() == "true" and bool(settings.get("ai_api_key") or settings.get("ai_provider") == "ollama")
+    ai_enabled = settings.get("enable_ai", "true").lower() == "true" and bool(settings.get("ai_api_key") or settings.get("ai_provider") in ["ollama", "local"])
 
     async def event_generator():
         yield f"data: {json.dumps({'type': 'init', 'dossier_id': dossier_id, 'target': target_label})}\n\n"

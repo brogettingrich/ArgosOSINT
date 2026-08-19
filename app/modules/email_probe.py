@@ -2,7 +2,7 @@ import hashlib
 import re
 import httpx
 from typing import Dict, Any, List
-from app.config import COMMON_HEADERS, REQUEST_TIMEOUT
+from app.config import COMMON_HEADERS, REQUEST_TIMEOUT, HTTP_VERIFY
 
 EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
 
@@ -42,11 +42,23 @@ async def probe_email_intelligence(email: str) -> Dict[str, Any]:
         "footprints": []
     }
 
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, verify=False) as client:
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, verify=HTTP_VERIFY) as client:
         # 1. Check Gravatar Profile
         try:
-            resp = await client.get(gravatar_profile, headers=COMMON_HEADERS)
-            if resp.status_code == 200:
+            # Retry loop for transient errors
+            attempts = 2
+            backoff = 0.1
+            resp = None
+            for _ in range(attempts):
+                try:
+                    resp = await client.get(gravatar_profile, headers=COMMON_HEADERS)
+                except (httpx.TimeoutException, httpx.RequestError):
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                break
+
+            if resp and resp.status_code == 200:
                 data = resp.json()
                 entry = data.get("entry", [{}])[0]
                 result["gravatar"]["exists"] = True
@@ -60,8 +72,18 @@ async def probe_email_intelligence(email: str) -> Dict[str, Any]:
         # 2. Check GitHub Public Commits / Search
         try:
             gh_url = f"https://api.github.com/search/users?q={clean_email}+in:email"
-            gh_resp = await client.get(gh_url, headers=COMMON_HEADERS)
-            if gh_resp.status_code == 200:
+            attempts = 2
+            backoff = 0.1
+            gh_resp = None
+            for _ in range(attempts):
+                try:
+                    gh_resp = await client.get(gh_url, headers=COMMON_HEADERS)
+                except (httpx.TimeoutException, httpx.RequestError):
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                break
+            if gh_resp and gh_resp.status_code == 200:
                 gh_data = gh_resp.json()
                 if gh_data.get("total_count", 0) > 0:
                     gh_user = gh_data["items"][0]

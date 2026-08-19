@@ -24,3 +24,7 @@ COMMON_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+# Whether to verify TLS certificates for outbound HTTP requests. Set to False
+# only for local development when you understand the risks.
+HTTP_VERIFY = True

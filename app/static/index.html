@@ -108,7 +108,7 @@
       <div id="ai-briefing-card" class="briefing-card" style="display:none;">
         <div class="briefing-header">
           <span>AI EXECUTIVE INTELLIGENCE BRIEFING</span>
-          <span id="briefing-model-tag" class="category-tag">GROQ LPU</span>
+          <span id="briefing-model-tag" class="category-tag">AI REASONING</span>
         </div>
         <p id="briefing-text" class="briefing-body"></p>
       </div>
@@ -178,28 +178,27 @@
           <label class="input-label">AI Reasoning Provider</label>
           <select id="setting-provider" class="form-input">
             <option value="groq">Groq Cloud API (Recommended - 500+ tokens/sec)</option>
-            <option value="ollama">Ollama (100% Offline Local Model)</option>
+            <option value="local">Local AI Mode (Ollama / EnclaveLM / Local Host)</option>
           </select>
         </div>
 
         <div id="group-api-key" class="input-group" style="margin-bottom: 14px;">
-          <label class="input-label">Groq API Key (Persisted Securely)</label>
+          <label class="input-label">Groq API Key (starts with gsk_...)</label>
           <div style="position:relative;">
             <input type="password" id="setting-api-key" class="form-input" style="width:100%;padding-right:60px;" placeholder="gsk_...">
             <button type="button" id="btn-toggle-key" class="btn-dismiss-link" style="position:absolute;right:8px;top:8px;">Show</button>
           </div>
         </div>
 
-        <!-- Dynamic Model Selector Dropdown -->
+        <!-- Clean 3-Model Selector Dropdown -->
         <div class="input-group" style="margin-bottom: 14px;">
           <label class="input-label">Model Identifier</label>
           <select id="setting-model-select" class="form-input"></select>
-          <input type="text" id="setting-model-custom" class="form-input" style="margin-top:6px;display:none;" placeholder="Enter custom model ID">
         </div>
 
         <div id="group-ollama-host" class="input-group" style="margin-bottom: 14px; display: none;">
-          <label class="input-label">Ollama Host URL</label>
-          <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434">
+          <label class="input-label">Local Host Endpoint URL</label>
+          <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434" placeholder="e.g. http://127.0.0.1:11434 or http://127.0.0.1:8000">
         </div>
 
         <div class="input-group" style="margin-bottom: 20px;">
