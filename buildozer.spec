@@ -7,8 +7,8 @@ source.include_exts = py,png,jpg,kv,atlas,html,css,js,json,db,txt
 source.include_patterns = app/**,data/**,requirements.txt
 version = 1.0
 
-# Dependencies: using fastapi 0.95.2 with pure Python pydantic v1 (no pydantic_core rust binary needed on ARM64)
-requirements = python3,kivy,pyjnius,android,fastapi==0.95.2,pydantic<2.0.0,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,starlette,sniffio,h11,idna,charset-normalizer
+# Dependencies: fastapi 0.95.2 + starlette 0.27.0 + pure Python pydantic 1.10.18
+requirements = python3,kivy,pyjnius,android,fastapi==0.95.2,starlette==0.27.0,pydantic==1.10.18,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer
 
 # Android specific
 android.permissions = INTERNET,ACCESS_NETWORK_STATE
