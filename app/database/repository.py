@@ -8,9 +8,15 @@ from app.config import DATABASE_PATH
 
 def get_connection():
     conn = sqlite3.connect(str(DATABASE_PATH), timeout=10.0)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA busy_timeout=5000;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+    except Exception:
+        pass
+    try:
+        conn.execute("PRAGMA busy_timeout=5000;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+    except Exception:
+        pass
     return conn
 
 def with_db_retry(func, max_retries=4):

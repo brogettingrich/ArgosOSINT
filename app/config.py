@@ -2,8 +2,17 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Check for Android writable app data directory or environment override
+if os.environ.get("ARGOS_DATA_DIR"):
+    DATA_DIR = Path(os.environ["ARGOS_DATA_DIR"])
+else:
+    DATA_DIR = BASE_DIR / "data"
+
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
 
 DATABASE_PATH = DATA_DIR / "argos.db"
 DB_PATH = DATABASE_PATH
@@ -31,6 +40,5 @@ COMMON_HEADERS = {
     "Upgrade-Insecure-Requests": "1"
 }
 
-# Whether to verify TLS certificates for outbound HTTP requests. Set to False
-# only for local development when you understand the risks.
+# Whether to verify TLS certificates for outbound HTTP requests.
 HTTP_VERIFY = True

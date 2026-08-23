@@ -11,8 +11,14 @@ def _ensure_column(cursor, table: str, column: str, definition: str):
 
 def init_db():
     conn = sqlite3.connect(str(DB_PATH))
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA busy_timeout=5000;")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+    except Exception:
+        pass
+    try:
+        conn.execute("PRAGMA busy_timeout=5000;")
+    except Exception:
+        pass
     cursor = conn.cursor()
 
     # NOTE: column layout below MUST stay in sync with app/database/repository.py

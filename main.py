@@ -1,7 +1,7 @@
 """
 ArgosOSINT Android Entry Point
-Starts the FastAPI/uvicorn server in a background thread,
-polls until ready, then opens the UI in an Android WebView in portrait mode.
+Starts FastAPI/uvicorn in a background daemon thread with disabled signal handlers,
+polls until port 8500 is responsive, then embeds the UI in a fullscreen Android WebView.
 """
 
 import threading
@@ -10,12 +10,12 @@ import os
 import sys
 import socket
 
-# ── Clean up any host-compiled .so files that break ARM64 ─────
+# ── 1. Clean up any host x86_64 .so binaries in pure-Python packages ──
 for p in list(sys.path):
     if p and os.path.isdir(p):
         try:
             for root, _, files in os.walk(p):
-                if 'pydantic' in root or 'typing_extensions' in root:
+                if any(pkg in root for pkg in ['pydantic', 'typing_extensions']):
                     for f in files:
                         if f.endswith('.so'):
                             try:
@@ -25,37 +25,50 @@ for p in list(sys.path):
         except Exception:
             pass
 
-# ── Android-specific storage & path setup ─────────────────────
+# ── 2. Android App Storage Path Setup ─────────────────────────
 if sys.platform == 'android' or 'ANDROID_ROOT' in os.environ:
     try:
         from android.storage import app_storage_path  # type: ignore
-        os.environ['ARGOS_DATA_DIR'] = os.path.join(app_storage_path(), 'data')
-        os.makedirs(os.environ['ARGOS_DATA_DIR'], exist_ok=True)
+        app_data = os.path.join(app_storage_path(), 'data')
+        os.environ['ARGOS_DATA_DIR'] = app_data
+        os.makedirs(app_data, exist_ok=True)
     except Exception as e:
-        print(f'[ArgosOSINT] Storage init warning: {e}')
+        print(f'[ArgosOSINT] App storage init: {e}')
 
 SERVER_PORT = 8500
 SERVER_URL = f'http://127.0.0.1:{SERVER_PORT}'
 
-# ── Start FastAPI server in background daemon thread ───────────
+# ── 3. Start Uvicorn / FastAPI in background thread ────────────
 def _run_server():
     try:
         import uvicorn
         from app.main import app as fastapi_app
-        uvicorn.run(
-            fastapi_app,
+
+        config = uvicorn.Config(
+            app=fastapi_app,
             host='127.0.0.1',
             port=SERVER_PORT,
             log_level='warning',
             access_log=False
         )
+        server = uvicorn.Server(config)
+        # MUST disable signal handlers in non-main thread
+        server.install_signal_handlers = lambda: None
+        server.run()
     except Exception as e:
-        print(f'[ArgosOSINT] Server error: {e}')
+        import traceback
+        err_msg = f'[ArgosOSINT] Server start error: {e}\n{traceback.format_exc()}'
+        print(err_msg)
+        try:
+            with open('argos_boot_error.log', 'w') as f:
+                f.write(err_msg)
+        except Exception:
+            pass
 
 server_thread = threading.Thread(target=_run_server, daemon=True)
 server_thread.start()
 
-def is_server_ready(timeout=10):
+def wait_for_server(timeout=15):
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -66,14 +79,13 @@ def is_server_ready(timeout=10):
             time.sleep(0.2)
     return False
 
-# ── Launch Kivy App with embedded Android WebView ───────────────
+# ── 4. Embedded Android WebView ────────────────────────────────
 from kivy.app import App                          # type: ignore
 from kivy.uix.widget import Widget               # type: ignore
-from kivy.clock import Clock                     # type: ignore
 
 def launch_native_webview():
-    # Wait for the backend thread to open port 8500
-    is_server_ready(timeout=10)
+    # Ensure port 8500 is accepting connections before loading WebView
+    wait_for_server(timeout=15)
 
     try:
         from jnius import autoclass              # type: ignore
@@ -87,6 +99,7 @@ def launch_native_webview():
         @run_on_ui_thread
         def _attach():
             activity = PythonActivity.mActivity
+            # Lock to portrait orientation
             activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
 
             wv = WebView(activity)
@@ -104,16 +117,14 @@ def launch_native_webview():
 
         _attach()
     except Exception as e:
-        print(f'[ArgosOSINT] Native WebView attach fallback: {e}')
-        import webbrowser
-        webbrowser.open(SERVER_URL)
+        print(f'[ArgosOSINT] WebView attach error: {e}')
 
 class ArgosApp(App):
     def build(self):
         return Widget()
 
     def on_start(self):
-        # Run webview launcher in a background thread to avoid blocking Kivy while waiting for port 8500
+        # Run WebView attachment in background thread to avoid blocking Kivy startup
         threading.Thread(target=launch_native_webview, daemon=True).start()
 
 if __name__ == '__main__':
