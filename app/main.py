@@ -1,10 +1,12 @@
 import asyncio
 import json
 import re
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from starlette.applications import Starlette
+from starlette.routing import Route, Mount
+from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
+from starlette.staticfiles import StaticFiles
+from starlette.requests import Request
 
 from app.config import BASE_DIR, DATABASE_PATH
 from app.database.schema import init_db
@@ -17,12 +19,10 @@ from app.modules.username_probe import scan_usernames_async, SITES_DB
 from app.modules.email_probe import probe_email_intelligence
 from app.modules.phone_probe import analyze_phone_number
 
-app = FastAPI(title="ArgosOSINT - High-Precision Intelligence Engine")
-
+# Initialize SQLite database
 init_db()
 
 STATIC_DIR = BASE_DIR / "app" / "static"
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 def parse_usernames_list(raw_input: str) -> list:
     if not raw_input:
@@ -36,13 +36,16 @@ def parse_usernames_list(raw_input: str) -> list:
             cleaned.append(c)
     return cleaned
 
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
+async def read_root(request: Request):
     index_file = STATIC_DIR / "index.html"
     return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
 
-@app.post("/api/permutations")
-async def get_permutations_endpoint(payload: dict):
+async def get_permutations_endpoint(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
     raw_user = payload.get("username", "").strip()
     known_names = payload.get("known_names", [])
     location = payload.get("location", "").strip()
@@ -67,18 +70,18 @@ async def get_permutations_endpoint(payload: dict):
             seen.add(u_name)
             deduped.append(item)
 
-    return {"permutations": deduped, "count": len(deduped)}
+    return JSONResponse({"permutations": deduped, "count": len(deduped)})
 
-@app.get("/api/scan/stream")
-async def scan_stream_endpoint(
-    username: str = "",
-    known_names: str = "",
-    location: str = "",
-    email: str = "",
-    phone: str = "",
-    enable_permutations: bool = True,
-    enable_digit_collisions: bool = False
-):
+async def scan_stream_endpoint(request: Request):
+    params = request.query_params
+    username = params.get("username", "")
+    known_names = params.get("known_names", "")
+    location = params.get("location", "")
+    email = params.get("email", "")
+    phone = params.get("phone", "")
+    enable_permutations = params.get("enable_permutations", "true").lower() == "true"
+    enable_digit_collisions = params.get("enable_digit_collisions", "false").lower() == "true"
+
     async def event_generator():
         seed_users = parse_usernames_list(username)
         names_list = [n.strip() for n in known_names.split(",") if n.strip()] if known_names else []
@@ -223,28 +226,29 @@ async def scan_stream_endpoint(
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@app.get("/api/settings")
-async def get_settings_endpoint():
+async def get_settings_endpoint(request: Request):
     raw_settings = repo.get_all_settings()
     api_key = raw_settings.get("ai_api_key", "").strip()
 
-    return {
+    return JSONResponse({
         "ai_provider": raw_settings.get("ai_provider", "groq"),
         "ai_model": raw_settings.get("ai_model", DEFAULT_GROQ_MODEL),
         "ai_host": raw_settings.get("ai_host", DEFAULT_LOCAL_HOST),
         "enable_ai": raw_settings.get("enable_ai", "true") != "false",
         "has_api_key": bool(api_key),
         "ai_api_key": api_key
-    }
+    })
 
-@app.post("/api/settings")
-async def save_settings_endpoint(payload: dict):
+async def save_settings_endpoint(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
     for k, v in payload.items():
         repo.set_setting(k, str(v).strip())
-    return {"status": "saved"}
+    return JSONResponse({"status": "saved"})
 
-@app.get("/api/settings/health")
-async def get_settings_health():
+async def get_settings_health(request: Request):
     settings = repo.get_all_settings()
     enabled = settings.get("enable_ai", "true") != "false"
     provider = settings.get("ai_provider", "groq")
@@ -253,35 +257,54 @@ async def get_settings_health():
     host = settings.get("ai_host", DEFAULT_LOCAL_HOST)
 
     if not enabled:
-        return {"online": False, "provider": "disabled", "model": "none", "label": "AI: STANDBY (DISABLED)"}
+        return JSONResponse({"online": False, "provider": "disabled", "model": "none", "label": "AI: STANDBY (DISABLED)"})
 
     res = await AIEngine.test_connection(provider=provider, api_key=api_key, model=model, host=host)
     if res.get("success"):
         model_name = model.split('/')[-1]
-        return {"online": True, "provider": provider, "model": model, "label": f"AI ENGINE: ONLINE ({provider.upper()} {model_name})"}
+        return JSONResponse({"online": True, "provider": provider, "model": model, "label": f"AI ENGINE: ONLINE ({provider.upper()} {model_name})"})
     else:
-        return {"online": False, "provider": provider, "model": model, "label": "AI ENGINE: OFFLINE (CHECK SETTINGS)"}
+        return JSONResponse({"online": False, "provider": provider, "model": model, "label": "AI ENGINE: OFFLINE (CHECK SETTINGS)"})
 
-@app.post("/api/settings/test")
-async def test_settings_connection(payload: dict):
+async def test_settings_connection(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
     provider = payload.get("ai_provider") or payload.get("provider", "groq")
     api_key = payload.get("ai_api_key") or payload.get("api_key", "")
     model = payload.get("ai_model") or payload.get("model", "")
     host = payload.get("ai_host") or payload.get("host", "http://127.0.0.1:11434")
-    return await AIEngine.test_connection(provider=provider, api_key=api_key, model=model, host=host)
+    res = await AIEngine.test_connection(provider=provider, api_key=api_key, model=model, host=host)
+    return JSONResponse(res)
 
-@app.get("/api/models/live")
-async def get_live_models_endpoint(key: str = ""):
+async def get_live_models_endpoint(request: Request):
+    key = request.query_params.get("key", "")
     models = await AIEngine.get_available_models(provider="groq", api_key=key)
-    return {"models": models}
+    return JSONResponse({"models": models})
 
-@app.get("/api/history")
-async def get_history_endpoint():
-    return repo.get_all_dossiers()
+async def get_history_endpoint(request: Request):
+    return JSONResponse(repo.get_all_dossiers())
 
-@app.get("/api/dossiers/{dossier_id}")
-async def get_dossier_details_endpoint(dossier_id: str):
+async def get_dossier_details_endpoint(request: Request):
+    dossier_id = request.path_params.get("dossier_id", "")
     details = repo.get_dossier_details(dossier_id)
     if details is None:
-        return {"error": "Dossier not found"}
-    return details
+        return JSONResponse({"error": "Dossier not found"}, status_code=404)
+    return JSONResponse(details)
+
+routes = [
+    Route("/", endpoint=read_root, methods=["GET"]),
+    Route("/api/permutations", endpoint=get_permutations_endpoint, methods=["POST"]),
+    Route("/api/scan/stream", endpoint=scan_stream_endpoint, methods=["GET"]),
+    Route("/api/settings", endpoint=get_settings_endpoint, methods=["GET"]),
+    Route("/api/settings", endpoint=save_settings_endpoint, methods=["POST"]),
+    Route("/api/settings/health", endpoint=get_settings_health, methods=["GET"]),
+    Route("/api/settings/test", endpoint=test_settings_connection, methods=["POST"]),
+    Route("/api/models/live", endpoint=get_live_models_endpoint, methods=["GET"]),
+    Route("/api/history", endpoint=get_history_endpoint, methods=["GET"]),
+    Route("/api/dossiers/{dossier_id}", endpoint=get_dossier_details_endpoint, methods=["GET"]),
+    Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
+]
+
+app = Starlette(debug=False, routes=routes)
