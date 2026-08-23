@@ -1,35 +1,29 @@
 [app]
-title           = ArgosOSINT
-package.name    = argososint
-package.domain  = org.argos
-source.dir      = .
+title = ArgosOSINT
+package.name = argososint
+package.domain = org.argos
+source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,html,css,js,json,db,txt
 source.include_patterns = app/**,data/**,requirements.txt
-version         = 1.0
+version = 1.0
 
-requirements    = python3,kivy,kivymd,pyjnius,android,\
-                  fastapi,uvicorn,httpx,pydantic,\
-                  python-multipart,dnspython,phonenumbers,\
-                  certifi,anyio,starlette,sniffio,h11,\
-                  idna,charset-normalizer
+# Dependencies
+requirements = python3,kivy,pyjnius,android,fastapi,uvicorn,httpx,pydantic,python-multipart,dnspython,phonenumbers,certifi,anyio,starlette,sniffio,h11,idna,charset-normalizer
 
-# Android
+# Android specific
 android.permissions = INTERNET,ACCESS_NETWORK_STATE
-android.api         = 34
-android.minapi      = 26
-android.ndk         = 25b
-android.ndk_api     = 21
-android.arch        = arm64-v8a
-android.allow_backup = False
-android.orientation  = portrait
-android.wakelock     = False
+android.api = 33
+android.minapi = 24
+android.ndk = 25b
+android.ndk_api = 21
+android.archs = arm64-v8a
+android.allow_backup = True
+android.orientation = portrait
+android.wakelock = False
+android.accept_sdk_license = True
 
-# Allow cleartext to localhost (needed for 127.0.0.1 WebView)
+# Cleartext traffic for local backend server
 android.manifest.uses_cleartext_traffic = True
-
-# Splash / icon (uses default Kivy if not present)
-# presplash.filename = %(source.dir)s/app/static/splash.png
-# icon.filename      = %(source.dir)s/app/static/icon.png
 
 [buildozer]
 log_level = 2
