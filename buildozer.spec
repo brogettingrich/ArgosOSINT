@@ -24,7 +24,10 @@ android.wakelock = False
 android.accept_sdk_license = True
 
 # Cleartext traffic for local backend server
-android.manifest.uses_cleartext_traffic = True
+# (android.manifest.uses_cleartext_traffic is not a real buildozer option and
+# was silently ignored -- verified against buildozer's source. The actual
+# supported hook injects a file's contents into the <application> tag.)
+android.extra_manifest_application_arguments = android_manifest_extra.xml
 
 [buildozer]
 log_level = 2
