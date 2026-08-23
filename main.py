@@ -1,7 +1,7 @@
 """
 ArgosOSINT Android Entry Point
 Starts the FastAPI/uvicorn server in a background thread,
-then opens the UI in an Android WebView that fills the screen.
+then opens the UI in an Android WebView that fills the screen in portrait mode.
 """
 
 import threading
@@ -9,25 +9,29 @@ import time
 import os
 import sys
 
-# ── Android-specific path setup ──────────────────────────────
+# ── Android-specific storage & path setup ─────────────────────
 if sys.platform == 'android' or 'ANDROID_ROOT' in os.environ:
-    from android.storage import app_storage_path  # type: ignore
-    # Point the database to writable app storage
-    os.environ['ARGOS_DATA_DIR'] = os.path.join(app_storage_path(), 'data')
-    os.makedirs(os.environ['ARGOS_DATA_DIR'], exist_ok=True)
+    try:
+        from android.storage import app_storage_path  # type: ignore
+        os.environ['ARGOS_DATA_DIR'] = os.path.join(app_storage_path(), 'data')
+        os.makedirs(os.environ['ARGOS_DATA_DIR'], exist_ok=True)
+    except Exception as e:
+        print(f'[ArgosOSINT] Storage init warning: {e}')
 
 SERVER_PORT = 8500
-SERVER_URL  = f'http://127.0.0.1:{SERVER_PORT}'
+SERVER_URL = f'http://127.0.0.1:{SERVER_PORT}'
 
-# ── Start FastAPI server in background thread ─────────────────
+# ── Start FastAPI server in background daemon thread ───────────
 def _run_server():
     try:
         import uvicorn
+        # Import app here after env vars are set
         uvicorn.run(
             'app.main:app',
             host='127.0.0.1',
             port=SERVER_PORT,
             log_level='warning',
+            access_log=False
         )
     except Exception as e:
         print(f'[ArgosOSINT] Server error: {e}')
@@ -35,70 +39,53 @@ def _run_server():
 server_thread = threading.Thread(target=_run_server, daemon=True)
 server_thread.start()
 
-# ── Wait for server to be ready (max 10 s) ───────────────────
-import socket
-
-def _wait_for_server(timeout=10):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            s = socket.create_connection(('127.0.0.1', SERVER_PORT), timeout=0.5)
-            s.close()
-            return True
-        except OSError:
-            time.sleep(0.3)
-    return False
-
-_wait_for_server()
-
-# ── Launch Kivy WebView ───────────────────────────────────────
+# ── Launch Kivy App with embedded Android WebView ───────────────
 from kivy.app import App                          # type: ignore
 from kivy.uix.widget import Widget               # type: ignore
 from kivy.clock import Clock                     # type: ignore
-from kivy.core.window import Window              # type: ignore
 
-Window.fullscreen = 'auto'
+def launch_native_webview():
+    try:
+        from jnius import autoclass              # type: ignore
+        from android.runnable import run_on_ui_thread  # type: ignore
 
-try:
-    # Android native WebView via pyjnius
-    from jnius import autoclass                  # type: ignore
-    from android.runnable import run_on_ui_thread  # type: ignore
-
-    PythonActivity = autoclass('org.kivy.android.PythonActivity')
-    WebView        = autoclass('android.webkit.WebView')
-    WebViewClient  = autoclass('android.webkit.WebViewClient')
-    LinearLayout   = autoclass('android.widget.LinearLayout')
-    ViewGroup      = autoclass('android.view.ViewGroup$LayoutParams')
-
-    class ArgosApp(App):
-        def build(self):
-            self.widget = Widget()
-            Clock.schedule_once(self._launch_webview, 0.1)
-            return self.widget
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        ActivityInfo   = autoclass('android.content.pm.ActivityInfo')
+        WebView        = autoclass('android.webkit.WebView')
+        WebViewClient  = autoclass('android.webkit.WebViewClient')
 
         @run_on_ui_thread
-        def _launch_webview(self, dt):
+        def _attach():
             activity = PythonActivity.mActivity
+            # Lock screen orientation to portrait
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+
             wv = WebView(activity)
-            wv.getSettings().setJavaScriptEnabled(True)
-            wv.getSettings().setDomStorageEnabled(True)
-            wv.getSettings().setAllowFileAccess(True)
+            settings = wv.getSettings()
+            settings.setJavaScriptEnabled(True)
+            settings.setDomStorageEnabled(True)
+            settings.setAllowFileAccess(True)
+            settings.setDatabaseEnabled(True)
+            settings.setUseWideViewPort(True)
+            settings.setLoadWithOverviewMode(True)
+
             wv.setWebViewClient(WebViewClient())
             wv.loadUrl(SERVER_URL)
             activity.setContentView(wv)
 
-except Exception:
-    # Fallback: Kivy Label + open system browser
-    from kivy.uix.label import Label            # type: ignore
-    import webbrowser
+        _attach()
+    except Exception as e:
+        print(f'[ArgosOSINT] Native WebView attach fallback: {e}')
+        import webbrowser
+        webbrowser.open(SERVER_URL)
 
-    class ArgosApp(App):
-        def build(self):
-            webbrowser.open(SERVER_URL)
-            return Label(
-                text=f'ArgosOSINT\nOpen {SERVER_URL}\nin your browser',
-                halign='center',
-            )
+class ArgosApp(App):
+    def build(self):
+        return Widget()
+
+    def on_start(self):
+        # Schedule webview launch on the main thread after Kivy window init
+        Clock.schedule_once(lambda dt: launch_native_webview(), 0.2)
 
 if __name__ == '__main__':
     ArgosApp().run()
