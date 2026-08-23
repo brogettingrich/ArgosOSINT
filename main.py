@@ -1,13 +1,29 @@
 """
 ArgosOSINT Android Entry Point
 Starts the FastAPI/uvicorn server in a background thread,
-then opens the UI in an Android WebView that fills the screen in portrait mode.
+polls until ready, then opens the UI in an Android WebView in portrait mode.
 """
 
 import threading
 import time
 import os
 import sys
+import socket
+
+# ── Clean up any host-compiled .so files that break ARM64 ─────
+for p in list(sys.path):
+    if p and os.path.isdir(p):
+        try:
+            for root, _, files in os.walk(p):
+                if 'pydantic' in root or 'typing_extensions' in root:
+                    for f in files:
+                        if f.endswith('.so'):
+                            try:
+                                os.remove(os.path.join(root, f))
+                            except Exception:
+                                pass
+        except Exception:
+            pass
 
 # ── Android-specific storage & path setup ─────────────────────
 if sys.platform == 'android' or 'ANDROID_ROOT' in os.environ:
@@ -25,9 +41,9 @@ SERVER_URL = f'http://127.0.0.1:{SERVER_PORT}'
 def _run_server():
     try:
         import uvicorn
-        # Import app here after env vars are set
+        from app.main import app as fastapi_app
         uvicorn.run(
-            'app.main:app',
+            fastapi_app,
             host='127.0.0.1',
             port=SERVER_PORT,
             log_level='warning',
@@ -39,12 +55,26 @@ def _run_server():
 server_thread = threading.Thread(target=_run_server, daemon=True)
 server_thread.start()
 
+def is_server_ready(timeout=10):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            s = socket.create_connection(('127.0.0.1', SERVER_PORT), timeout=0.3)
+            s.close()
+            return True
+        except OSError:
+            time.sleep(0.2)
+    return False
+
 # ── Launch Kivy App with embedded Android WebView ───────────────
 from kivy.app import App                          # type: ignore
 from kivy.uix.widget import Widget               # type: ignore
 from kivy.clock import Clock                     # type: ignore
 
 def launch_native_webview():
+    # Wait for the backend thread to open port 8500
+    is_server_ready(timeout=10)
+
     try:
         from jnius import autoclass              # type: ignore
         from android.runnable import run_on_ui_thread  # type: ignore
@@ -57,7 +87,6 @@ def launch_native_webview():
         @run_on_ui_thread
         def _attach():
             activity = PythonActivity.mActivity
-            # Lock screen orientation to portrait
             activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
 
             wv = WebView(activity)
@@ -84,8 +113,8 @@ class ArgosApp(App):
         return Widget()
 
     def on_start(self):
-        # Schedule webview launch on the main thread after Kivy window init
-        Clock.schedule_once(lambda dt: launch_native_webview(), 0.2)
+        # Run webview launcher in a background thread to avoid blocking Kivy while waiting for port 8500
+        threading.Thread(target=launch_native_webview, daemon=True).start()
 
 if __name__ == '__main__':
     ArgosApp().run()
