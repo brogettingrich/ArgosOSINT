@@ -36,7 +36,7 @@ When given an ambiguous handle like `user...34`, ArgosOSINT automatically comput
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/ArgosOSINT.git
+   git clone https://github.com/brogettingrich/ArgosOSINT.git
    cd ArgosOSINT
    ```
 2. Run automated setup:
@@ -55,7 +55,7 @@ When given an ambiguous handle like `user...34`, ArgosOSINT automatically comput
 
 1. Open Termux and clone the repository:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/ArgosOSINT.git ~/ArgosOSINT
+   git clone https://github.com/brogettingrich/ArgosOSINT.git ~/ArgosOSINT
    cd ~/ArgosOSINT
    ```
 2. Setup and launch:

@@ -1,11 +1,16 @@
-from typing import Dict, Any, List
+from typing import List, Dict, Any
 
 SITES_CATALOG: List[Dict[str, Any]] = [
-    # --- SOCIAL PLATFORMS ---
+    # 1. PRIMARY SOCIAL & MESSAGING
     {
         "name": "Instagram", "category": "Social",
         "url_template": "https://www.instagram.com/{}/",
         "check_type": "special_api", "special_handler": "instagram"
+    },
+    {
+        "name": "Facebook", "category": "Social",
+        "url_template": "https://www.facebook.com/{}",
+        "check_type": "special_api", "special_handler": "facebook"
     },
     {
         "name": "TikTok", "category": "Social",
@@ -15,23 +20,14 @@ SITES_CATALOG: List[Dict[str, Any]] = [
     {
         "name": "Twitter / X", "category": "Social",
         "url_template": "https://x.com/{}",
-        "check_type": "special_api", "special_handler": "twitter"
+        "check_type": "status_code",
+        "error_code": 404
     },
     {
         "name": "Pinterest", "category": "Social",
         "url_template": "https://www.pinterest.com/{}/",
-        "check_type": "special_api", "special_handler": "pinterest"
-    },
-    {
-        "name": "Facebook", "category": "Social",
-        "url_template": "https://www.facebook.com/{}",
-        "check_type": "special_api", "special_handler": "facebook"
-    },
-    {
-        "name": "Reddit", "category": "Social",
-        "url_template": "https://www.reddit.com/user/{}/",
-        "profile_url": "https://www.reddit.com/user/{}/",
-        "check_type": "special_api", "special_handler": "reddit"
+        "check_type": "status_code",
+        "error_code": 404
     },
     {
         "name": "Telegram", "category": "Social",
@@ -45,9 +41,26 @@ SITES_CATALOG: List[Dict[str, Any]] = [
     },
     {
         "name": "Tumblr", "category": "Social",
-        "url_template": "https://{}.tumblr.com",
+        "url_template": "https://www.tumblr.com/{}",
         "check_type": "status_code",
         "error_code": 404
+    },
+    {
+        "name": "VK", "category": "Social",
+        "url_template": "https://vk.com/{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "Vero", "category": "Social",
+        "url_template": "https://vero.co/{}",
+        "check_type": "special_api", "special_handler": "vero"
+    },
+    {
+        "name": "Reddit", "category": "Social",
+        "url_template": "https://old.reddit.com/user/{}",
+        "profile_url": "https://www.reddit.com/user/{}",
+        "check_type": "special_api", "special_handler": "reddit"
     },
     {
         "name": "Quora", "category": "Social",
@@ -56,71 +69,16 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "error_code": 404
     },
     {
-        "name": "Patreon", "category": "Social",
-        "url_template": "https://www.patreon.com/{}",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "Disqus", "category": "Social",
-        "url_template": "https://disqus.com/by/{}/",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "Flickr", "category": "Social",
-        "url_template": "https://www.flickr.com/people/{}/",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "Wattpad", "category": "Social",
-        "url_template": "https://www.wattpad.com/user/{}",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "Goodreads", "category": "Social",
-        "url_template": "https://www.goodreads.com/{}",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "Linktree", "category": "Social",
-        "url_template": "https://linktr.ee/{}",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "Bluesky", "category": "Social",
-        "url_template": "https://bsky.app/profile/{}",
-        "profile_url": "https://bsky.app/profile/{}",
-        "check_type": "special_api", "special_handler": "bluesky"
-    },
-    {
-        "name": "Threads", "category": "Social",
-        "url_template": "https://www.threads.net/@{}",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "Mastodon", "category": "Social",
+        "name": "Mastodon Social", "category": "Social",
         "url_template": "https://mastodon.social/@{}",
-        "profile_url": "https://mastodon.social/@{}",
-        "check_type": "special_api", "special_handler": "mastodon"
-    },
-    {
-        "name": "VK", "category": "Social",
-        "url_template": "https://vk.com/{}",
         "check_type": "status_code",
         "error_code": 404
     },
 
-    # --- DEVELOPER & TECH ---
+    # 2. DEVELOPER & CODING
     {
         "name": "GitHub", "category": "Developer",
-        "url_template": "https://api.github.com/users/{}",
-        "profile_url": "https://github.com/{}",
+        "url_template": "https://github.com/{}",
         "check_type": "special_api", "special_handler": "github"
     },
     {
@@ -130,34 +88,16 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "error_code": 404
     },
     {
-        "name": "Bitbucket", "category": "Developer",
-        "url_template": "https://bitbucket.org/{}/",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "StackOverflow", "category": "Developer",
-        "url_template": "https://stackoverflow.com/users/{}",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "DockerHub", "category": "Developer",
-        "url_template": "https://hub.docker.com/u/{}/",
-        "check_type": "status_code",
-        "error_code": 404
+        "name": "HackerNews", "category": "Developer",
+        "url_template": "https://hacker-news.firebaseio.com/v0/user/{}.json",
+        "profile_url": "https://news.ycombinator.com/user?id={}",
+        "check_type": "special_api", "special_handler": "hackernews"
     },
     {
         "name": "NPM", "category": "Developer",
         "url_template": "https://www.npmjs.com/~{}",
         "check_type": "status_code",
         "error_code": 404
-    },
-    {
-        "name": "HackerNews", "category": "Developer",
-        "url_template": "https://news.ycombinator.com/user?id={}",
-        "check_type": "message",
-        "error_message": "No such user"
     },
     {
         "name": "Dev.to", "category": "Developer",
@@ -189,12 +129,23 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "check_type": "status_code",
         "error_code": 404
     },
+    {
+        "name": "DockerHub", "category": "Developer",
+        "url_template": "https://hub.docker.com/u/{}/",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "HuggingFace", "category": "Developer",
+        "url_template": "https://huggingface.co/{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
 
-    # --- GAMING PLATFORMS ---
+    # 3. GAMING & STREAMING
     {
         "name": "Steam", "category": "Gaming",
-        "url_template": "https://steamcommunity.com/id/{}/?xml=1",
-        "profile_url": "https://steamcommunity.com/id/{}/",
+        "url_template": "https://steamcommunity.com/id/{}",
         "check_type": "special_api", "special_handler": "steam"
     },
     {
@@ -210,8 +161,7 @@ SITES_CATALOG: List[Dict[str, Any]] = [
     },
     {
         "name": "Chess.com", "category": "Gaming",
-        "url_template": "https://api.chess.com/pub/player/{}",
-        "profile_url": "https://www.chess.com/member/{}",
+        "url_template": "https://www.chess.com/member/{}",
         "check_type": "status_code",
         "error_code": 404
     },
@@ -223,24 +173,12 @@ SITES_CATALOG: List[Dict[str, Any]] = [
     },
     {
         "name": "Speedrun.com", "category": "Gaming",
-        "url_template": "https://speedrun.com/user/{}",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "Newgrounds", "category": "Gaming",
-        "url_template": "https://{}.newgrounds.com",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-    {
-        "name": "OSU!", "category": "Gaming",
-        "url_template": "https://osu.ppy.sh/users/{}",
+        "url_template": "https://www.speedrun.com/user/{}",
         "check_type": "status_code",
         "error_code": 404
     },
 
-    # --- MEDIA & MUSIC ---
+    # 4. MEDIA, MUSIC & CREATIVE
     {
         "name": "Spotify", "category": "Media",
         "url_template": "https://open.spotify.com/user/{}",
@@ -255,7 +193,24 @@ SITES_CATALOG: List[Dict[str, Any]] = [
     {
         "name": "Bandcamp", "category": "Media",
         "url_template": "https://{}.bandcamp.com",
-        "profile_url": "https://{}.bandcamp.com",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "Vimeo", "category": "Media",
+        "url_template": "https://vimeo.com/{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "Flickr", "category": "Media",
+        "url_template": "https://www.flickr.com/photos/{}/",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "Unsplash", "category": "Media",
+        "url_template": "https://unsplash.com/@{}",
         "check_type": "status_code",
         "error_code": 404
     },
@@ -272,14 +227,25 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "error_code": 404
     },
     {
-        "name": "DeviantArt", "category": "Media",
-        "url_template": "https://www.deviantart.com/{}",
+        "name": "ArtStation", "category": "Media",
+        "url_template": "https://www.artstation.com/{}",
         "check_type": "status_code",
         "error_code": 404
     },
     {
-        "name": "Vimeo", "category": "Media",
-        "url_template": "https://vimeo.com/{}",
+        "name": "Wattpad", "category": "Media",
+        "url_template": "https://www.wattpad.com/user/{}",
+        "check_type": "special_api", "special_handler": "wattpad"
+    },
+    {
+        "name": "Substack", "category": "Media",
+        "url_template": "https://{}.substack.com",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "Medium", "category": "Media",
+        "url_template": "https://medium.com/@{}",
         "check_type": "status_code",
         "error_code": 404
     },
@@ -290,44 +256,38 @@ SITES_CATALOG: List[Dict[str, Any]] = [
         "error_code": 404
     },
     {
-        "name": "Last.fm", "category": "Media",
-        "url_template": "https://www.last.fm/user/{}",
+        "name": "Goodreads", "category": "Media",
+        "url_template": "https://www.goodreads.com/{}",
         "check_type": "status_code",
         "error_code": 404
     },
     {
-        "name": "YouTube", "category": "Media",
-        "url_template": "https://www.youtube.com/@{}",
-        "check_type": "special_api", "special_handler": "youtube"
-    },
-    {
-        "name": "Medium", "category": "Media",
-        "url_template": "https://medium.com/@{}",
-        "check_type": "special_api", "special_handler": "medium"
-    },
-    {
-        "name": "Substack", "category": "Media",
-        "url_template": "https://{}.substack.com",
-        "profile_url": "https://{}.substack.com",
-        "check_type": "special_api", "special_handler": "substack"
-    },
-    {
-        "name": "Rumble", "category": "Media",
-        "url_template": "https://rumble.com/user/{}",
-        "check_type": "status_code",
-        "error_code": 404
-    },
-
-    # --- CRYPTO ---
-    {
-        "name": "OpenSea", "category": "Crypto",
-        "url_template": "https://opensea.io/{}",
+        "name": "Archive.org", "category": "Media",
+        "url_template": "https://archive.org/details/@{}",
         "check_type": "status_code",
         "error_code": 404
     },
     {
-        "name": "Keybase", "category": "Crypto",
-        "url_template": "https://keybase.io/{}",
+        "name": "Linktree", "category": "Media",
+        "url_template": "https://linktr.ee/{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "About.me", "category": "Media",
+        "url_template": "https://about.me/{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "BuyMeACoffee", "category": "Media",
+        "url_template": "https://www.buymeacoffee.com/{}",
+        "check_type": "status_code",
+        "error_code": 404
+    },
+    {
+        "name": "Patreon", "category": "Media",
+        "url_template": "https://www.patreon.com/{}",
         "check_type": "status_code",
         "error_code": 404
     }

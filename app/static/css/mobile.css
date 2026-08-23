@@ -1,0 +1,758 @@
+/* ==========================================================================
+   ARGOS // OSINT — MOBILE UI (Claude App Style)
+   Samsung A54 — 390px+ CSS viewport width
+
+   Design language: Claude mobile app
+   · DM Sans font throughout — clean, geometric, highly readable
+   · Rounded cards (14px radius)
+   · Pill-shaped filter chips
+   · Custom checkboxes (no browser defaults)
+   · Centered settings modal (not bottom sheet)
+   · 2-tab bottom nav (Recon + Dossiers only)
+
+   IMPORTANT: All desktop styles in main.css / components.css are untouched.
+   Only rules inside @media (max-width: 600px) affect phone layout.
+   ========================================================================== */
+
+/* Default-hidden elements (apply globally, mobile restores them) */
+.bottom-nav       { display: none; }
+#ai-status-mobile { display: none; }
+
+
+/* ============================================================
+   MOBILE BREAKPOINT
+   ============================================================ */
+@media (max-width: 600px) {
+
+  /* ─── Font Override — DM Sans everywhere on mobile ────────
+     Overrides both --font-sans AND --font-mono so every
+     element (labels, monospace metrics, code values) uses
+     DM Sans instead of JetBrains Mono or Inter.
+     ─────────────────────────────────────────────────────── */
+  :root {
+    --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  /* ─── Base ──────────────────────────────────────────────── */
+
+  html, body {
+    font-size: 14px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+
+  /* ─── Top Header — Minimal bar ──────────────────────────── */
+
+  .app-header {
+    height: 52px;
+    padding: 0 18px;
+    background: #000;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .nav-tabs         { display: none !important; }
+  #ai-global-status { display: none; }
+
+  .brand-title {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: #fff;
+    text-transform: none;
+  }
+
+  .brand-meta {
+    display: none;
+  }
+
+  .brand-logo-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+  }
+
+  /* Settings — rounded button */
+  #btn-open-settings {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: #e4e4e7;
+    padding: 6px 14px;
+    min-height: 36px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+
+  /* ─── Main Layout ───────────────────────────────────────── */
+
+  .main-container {
+    padding: 14px 14px 76px 14px;
+    gap: 12px;
+    max-width: 100%;
+  }
+
+  .view-section {
+    gap: 12px;
+  }
+
+
+  /* ─── Cards ─────────────────────────────────────────────── */
+
+  .terminal-card {
+    background: #0c0c10;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 16px 16px;
+  }
+
+  .card-header-row {
+    margin-bottom: 14px;
+  }
+
+  .terminal-section-title {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: #71717a;
+    text-transform: uppercase;
+  }
+
+  .terminal-status-indicator {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+
+  /* ─── Form Inputs ───────────────────────────────────────── */
+
+  .grid-inputs {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .input-label {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    color: #71717a;
+    letter-spacing: 0.2px;
+    text-transform: none;
+  }
+
+  .form-input {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    min-height: 46px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: #fff;
+    transition: border-color 0.2s;
+  }
+
+  .form-input:focus {
+    border-color: rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.06);
+  }
+
+  .form-input::placeholder {
+    color: #52525b;
+    font-family: var(--font-sans);
+  }
+
+  select.form-input {
+    min-height: 46px;
+  }
+
+
+  /* ─── Custom Checkboxes — no browser defaults ───────────── */
+
+  input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    border: 1.5px solid rgba(255,255,255,0.2);
+    border-radius: 5px;
+    background: rgba(255,255,255,0.05);
+    cursor: pointer;
+    position: relative;
+    transition: background 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+  }
+
+  input[type="checkbox"]:checked {
+    background: #ffffff;
+    border-color: #ffffff;
+  }
+
+  /* Custom checkmark drawn with CSS */
+  input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 2px;
+    width: 5px;
+    height: 9px;
+    border: 2px solid #000;
+    border-top: none;
+    border-left: none;
+    transform: rotate(42deg);
+  }
+
+
+  /* ─── Options Row ───────────────────────────────────────── */
+
+  .options-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .options-row > div {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .checkbox-label {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 400;
+    color: #a1a1aa;
+    gap: 10px;
+    min-height: 36px;
+    letter-spacing: 0;
+  }
+
+  .checkbox-label:hover {
+    color: #d4d4d8;
+  }
+
+
+  /* ─── Execute Probe button ──────────────────────────────── */
+
+  .btn-launch-scan {
+    width: 100%;
+    min-height: 46px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    text-transform: none;
+    border-radius: 12px;
+    background: #fff;
+    color: #000;
+  }
+
+  .btn-launch-scan:hover {
+    opacity: 0.92;
+  }
+
+
+  /* ─── AI Status inline element ──────────────────────────── */
+
+  #ai-status-mobile {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    color: #52525b;
+    padding: 4px 0 2px 0;
+  }
+
+
+  /* ─── Permutation bar ───────────────────────────────────── */
+
+  .permutation-bar {
+    min-height: 16px;
+  }
+
+  .variants-counter {
+    font-family: var(--font-sans);
+    font-size: 11px;
+  }
+
+
+  /* ─── Progress Panel ────────────────────────────────────── */
+
+  .progress-panel {
+    background: #0c0c10;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+
+  .progress-header {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: #71717a;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .progress-bar-bg {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .progress-bar-fill {
+    border-radius: 2px;
+  }
+
+  #btn-dismiss-scan {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    color: #52525b;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+
+  /* ─── AI Briefing Card ──────────────────────────────────── */
+
+  .briefing-card {
+    background: #0c0c10;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 16px 16px;
+  }
+
+  .briefing-text {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.6;
+    color: #d4d4d8;
+  }
+
+  .briefing-meta-row {
+    font-family: var(--font-sans);
+    font-size: 11px;
+  }
+
+
+  /* ─── Results Header — stacked layout ──────────────────────
+     Problem: findings count + RESET + filter chips were all
+     on one line, cramping the filter chip row.
+     Fix: stack into two rows — count/reset on top, chips below.
+     ─────────────────────────────────────────────────────── */
+
+  #view-recon > .card-header-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 6px;
+    margin-bottom: 0;
+  }
+
+  /* Top row: "0 DISCOVERED" left — RESET right */
+  #view-recon > .card-header-row > div:first-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  #findings-count {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: #71717a;
+  }
+
+  /* Reset button — distinct look (subtle red tint) */
+  #btn-reset-results {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    background: rgba(239, 68, 68, 0.09);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #f87171;
+    border-radius: 8px;
+    padding: 5px 12px;
+    min-height: 28px;
+    transition: background 0.15s;
+  }
+
+  #btn-reset-results:hover {
+    background: rgba(239, 68, 68, 0.16);
+  }
+
+
+  /* ─── Filter Chips — Horizontal Scroll, Pill style ──────── */
+
+  .filter-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    gap: 6px;
+    padding-bottom: 2px;
+    padding-top: 2px;
+  }
+
+  .filter-row::-webkit-scrollbar { display: none; }
+
+  .filter-chip {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    min-height: 30px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: rgba(255,255,255,0.05);
+    color: #71717a;
+    transition: all 0.15s;
+    letter-spacing: 0;
+  }
+
+  .filter-chip:hover {
+    color: #a1a1aa;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .filter-chip.active {
+    color: #fff;
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.18);
+    font-weight: 600;
+  }
+
+  .sub-filter-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    gap: 6px;
+    background: transparent;
+    padding: 4px 0;
+  }
+
+  .sub-filter-row::-webkit-scrollbar { display: none; }
+
+  .sub-chip {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    min-height: 28px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: #a1a1aa;
+    letter-spacing: 0;
+  }
+
+  .sub-chip.active {
+    color: #fff;
+    border-color: rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.1);
+  }
+
+
+  /* ─── Result Cards ──────────────────────────────────────── */
+
+  .results-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .target-card {
+    background: #0c0c10;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .target-card:hover {
+    background: #101014;
+    border-color: rgba(255,255,255,0.11);
+  }
+
+  .platform-name {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  .category-tag {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .corrob-indicator {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+
+  .display-name-text {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .account-handle-text {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: #71717a;
+  }
+
+  .profile-bio-box {
+    border-radius: 8px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.5;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .metric-item {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+
+  .btn-profile-link {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    min-height: 36px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.05);
+    color: #d4d4d8;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .btn-pivot-trigger {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    min-height: 30px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    letter-spacing: 0;
+  }
+
+  .btn-terminal-action {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    min-height: 32px;
+    padding: 4px 8px;
+    color: #71717a;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .pivot-label {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+
+  /* ─── Intelligence Dossiers ─────────────────────────────── */
+
+  #view-history .terminal-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 14px;
+  }
+
+  #view-history table {
+    min-width: 480px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+  }
+
+  #view-history th,
+  #view-history td {
+    font-family: var(--font-sans);
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+
+  /* ─── Settings Modal — Centered (not bottom sheet) ──────── */
+
+  .modal-overlay {
+    align-items: center;        /* center vertically */
+    justify-content: center;
+    padding: 20px;              /* breathing room around the card */
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .modal-card {
+    max-width: 100%;
+    width: 100%;
+    border-radius: 18px;        /* fully rounded — not a bottom sheet */
+    padding: 24px 18px 28px 18px;
+    max-height: 85vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #0c0c10;
+    border: 1px solid rgba(255,255,255,0.09);
+  }
+
+  /* Remove the drag handle (was used for bottom sheet) */
+  .modal-card::before {
+    display: none;
+  }
+
+  /* Settings title */
+  .modal-card .terminal-section-title {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  /* Settings close button */
+  #btn-close-settings {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: #71717a;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  /* Settings save button full-width */
+  .modal-card .btn-launch-scan {
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  /* Settings test connection button */
+  #btn-test-ai {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: #a1a1aa;
+    letter-spacing: 0;
+    text-transform: none;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 8px 14px;
+    min-height: 36px;
+  }
+
+
+  /* ─── Bottom Navigation — 2 tabs ────────────────────────── */
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(5, 5, 8, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    z-index: 100;
+  }
+
+  .bottom-nav-btn {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 8px 4px;
+    color: #52525b;
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+    text-transform: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.15s;
+    min-height: 60px;
+  }
+
+  .bottom-nav-btn svg {
+    width: 22px;
+    height: 22px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex-shrink: 0;
+    transition: stroke 0.15s;
+  }
+
+  .bottom-nav-btn:hover { color: #a1a1aa; }
+
+  .bottom-nav-btn.active { color: #fff; }
+
+  .bottom-nav-btn.active svg { stroke: #fff; }
+
+  /* Active pill indicator above icon */
+  .bottom-nav-btn.active::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 20px;
+    height: 3px;
+    background: #fff;
+    border-radius: 999px;
+  }
+
+} /* END @media (max-width: 600px) */

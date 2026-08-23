@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +12,7 @@ from app.database import repository as repo
 from app.core.permutations import generate_permutations, resolve_country
 from app.core.ai_engine import AIEngine, DEFAULT_GROQ_MODEL, DEFAULT_LOCAL_HOST, DEFAULT_LOCAL_MODEL
 from app.core.corroboration import score_profile_corroboration
+from app.core.email_pivot import EmailPivotEngine
 from app.modules.username_probe import scan_usernames_async, SITES_DB
 from app.modules.email_probe import probe_email_intelligence
 from app.modules.phone_probe import analyze_phone_number
@@ -22,6 +24,18 @@ init_db()
 STATIC_DIR = BASE_DIR / "app" / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+def parse_usernames_list(raw_input: str) -> list:
+    if not raw_input:
+        return []
+    # Support comma, space, semicolon, tab, and newline delimiters
+    tokens = re.split(r'[,;\s\n\t]+', raw_input.strip())
+    cleaned = []
+    for t in tokens:
+        c = t.strip().lstrip('@').rstrip('/').lower()
+        if c and c not in cleaned:
+            cleaned.append(c)
+    return cleaned
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     index_file = STATIC_DIR / "index.html"
@@ -29,18 +43,31 @@ async def read_root():
 
 @app.post("/api/permutations")
 async def get_permutations_endpoint(payload: dict):
-    username = payload.get("username", "").strip()
+    raw_user = payload.get("username", "").strip()
     known_names = payload.get("known_names", [])
     location = payload.get("location", "").strip()
-    enable_digit_collisions = bool(payload.get("enable_digit_collisions", False))
+    enable_digit_collisions = payload.get("enable_digit_collisions", False)
 
-    perms = generate_permutations(
-        seed_username=username,
-        known_names=known_names,
-        location=location,
-        enable_digit_collisions=enable_digit_collisions
-    )
-    return {"permutations": perms, "count": len(perms)}
+    seed_list = parse_usernames_list(raw_user)
+    all_perms = []
+    
+    if seed_list:
+        for u in seed_list:
+            p = generate_permutations(seed_username=u, known_names=known_names, location=location, enable_digit_collisions=enable_digit_collisions)
+            all_perms.extend(p)
+    else:
+        all_perms = generate_permutations(seed_username="", known_names=known_names, location=location, enable_digit_collisions=enable_digit_collisions)
+
+    # Deduplicate permutations
+    seen = set()
+    deduped = []
+    for item in all_perms:
+        u_name = item["username"]
+        if u_name not in seen:
+            seen.add(u_name)
+            deduped.append(item)
+
+    return {"permutations": deduped, "count": len(deduped)}
 
 @app.get("/api/scan/stream")
 async def scan_stream_endpoint(
@@ -53,22 +80,52 @@ async def scan_stream_endpoint(
     enable_digit_collisions: bool = False
 ):
     async def event_generator():
-        target_name = username or (known_names.split(',')[0].strip() if known_names else email) or "Anonymous Target"
+        seed_users = parse_usernames_list(username)
         names_list = [n.strip() for n in known_names.split(",") if n.strip()] if known_names else []
+        
+        target_name = (", ".join(seed_users) if seed_users else (names_list[0] if names_list else email)) or "Anonymous Target"
 
         dossier_id = repo.create_dossier(
             target_name=target_name,
-            seed_username=username,
+            seed_username=", ".join(seed_users),
             seed_email=email,
             seed_phone=phone
         )
         yield f"data: {json.dumps({'type': 'init', 'dossier_id': dossier_id})}\n\n"
 
-        # 1. Email Intelligence
+        discovered_findings = []
+
+        # 1. Email Intelligence & Deep Account Pivots
         email_result = None
         if email:
             email_result = await probe_email_intelligence(email)
             yield f"data: {json.dumps({'type': 'email_result', 'data': email_result})}\n\n"
+
+            # Holehe-style account registration probing & real-time breach intelligence
+            email_pivots = await EmailPivotEngine.probe_all_email_registrations(email)
+            breach_records = await EmailPivotEngine.get_public_breaches(email)
+            yield f"data: {json.dumps({'type': 'email_pivots', 'pivots': email_pivots, 'breaches': breach_records})}\n\n"
+
+            for ep in email_pivots:
+                pivot_finding = {
+                    "site": ep["service"],
+                    "category": ep.get("category", "Email Pivot"),
+                    "username": ep["username"],
+                    "profile_url": ep["profile_url"],
+                    "found": True,
+                    "status_code": 200,
+                    "latency_ms": 95,
+                    "corroboration": {"score": 95, "verdict": "EMAIL REGISTERED"},
+                    "is_seed": True,
+                    "is_email_pivot": True,
+                    "metadata": {
+                        "display_name": ep.get("display_name"),
+                        "bio": ep.get("bio"),
+                        "avatar_url": ep.get("avatar_url")
+                    }
+                }
+                discovered_findings.append(pivot_finding)
+                repo.save_scan_result(dossier_id, pivot_finding)
 
         # 2. Phone Intelligence
         phone_result = None
@@ -76,21 +133,32 @@ async def scan_stream_endpoint(
             phone_result = analyze_phone_number(phone)
             yield f"data: {json.dumps({'type': 'phone_result', 'data': phone_result})}\n\n"
 
-        # 3. Generate Permutations (Separating Exact Seed from Variations)
-        perms = generate_permutations(
-            seed_username=username,
-            known_names=names_list,
-            location=location,
-            enable_digit_collisions=enable_digit_collisions
-        )
-        exact_seeds = [p["username"] for p in perms if p.get("is_seed")]
-        secondary_perms = [p["username"] for p in perms if not p.get("is_seed")] if enable_permutations else []
+        # 3. Generate Permutations for all Seed Handles
+        exact_seeds = list(seed_users)
+        secondary_perms = []
+
+        if seed_users:
+            for u in seed_users:
+                p_list = generate_permutations(seed_username=u, known_names=names_list, location=location, enable_digit_collisions=enable_digit_collisions)
+                for p in p_list:
+                    if p.get("is_seed"):
+                        if p["username"] not in exact_seeds:
+                            exact_seeds.append(p["username"])
+                    elif enable_permutations:
+                        if p["username"] not in secondary_perms and p["username"] not in exact_seeds:
+                            secondary_perms.append(p["username"])
+        elif names_list:
+            p_list = generate_permutations(seed_username="", known_names=names_list, location=location, enable_digit_collisions=enable_digit_collisions)
+            for p in p_list:
+                if p.get("is_seed"):
+                    exact_seeds.append(p["username"])
+                elif enable_permutations:
+                    secondary_perms.append(p["username"])
 
         total_variants = len(exact_seeds) + len(secondary_perms)
         yield f"data: {json.dumps({'type': 'permutations_ready', 'count': total_variants})}\n\n"
 
-        discovered_findings = []
-        seed_meta = {"username": username, "display_name": names_list[0] if names_list else ""}
+        seed_meta = {"username": exact_seeds[0] if exact_seeds else "", "display_name": names_list[0] if names_list else ""}
 
         country_info = resolve_country(location)
         t_country = country_info["code"] if country_info else ""
@@ -98,7 +166,7 @@ async def scan_stream_endpoint(
         total_probes = max(1, total_variants * active_cat_len)
         completed_probes = 0
 
-        # PHASE 1: SCAN EXACT SEED TARGET FIRST ACROSS ALL PLATFORMS
+        # PHASE 1: SCAN ALL EXACT SEED TARGETS FIRST
         if exact_seeds:
             async for result in scan_usernames_async(exact_seeds, location=location, seed_name=names_list[0] if names_list else ""):
                 completed_probes += 1
@@ -118,7 +186,7 @@ async def scan_stream_endpoint(
                 pct = int((completed_probes / total_probes) * 100)
                 yield f"data: {json.dumps({'type': 'probe_result', 'result': result, 'progress': {'percent': pct, 'done': completed_probes, 'total': total_probes}})}\n\n"
 
-        # PHASE 2: SCAN SECONDARY VARIATIONS
+        # PHASE 2: SCAN SECONDARY PERMUTATIONS
         if secondary_perms:
             async for result in scan_usernames_async(secondary_perms, location=location, seed_name=names_list[0] if names_list else ""):
                 completed_probes += 1
@@ -160,31 +228,19 @@ async def get_settings_endpoint():
     raw_settings = repo.get_all_settings()
     api_key = raw_settings.get("ai_api_key", "").strip()
 
-    masked_key = ""
-    if api_key:
-        if len(api_key) > 8:
-            masked_key = f"{api_key[:4]}...{api_key[-4:]}"
-        else:
-            masked_key = "••••••••"
-
     return {
         "ai_provider": raw_settings.get("ai_provider", "groq"),
         "ai_model": raw_settings.get("ai_model", DEFAULT_GROQ_MODEL),
         "ai_host": raw_settings.get("ai_host", DEFAULT_LOCAL_HOST),
         "enable_ai": raw_settings.get("enable_ai", "true") != "false",
         "has_api_key": bool(api_key),
-        "masked_api_key": masked_key
+        "ai_api_key": api_key
     }
 
 @app.post("/api/settings")
 async def save_settings_endpoint(payload: dict):
     for k, v in payload.items():
-        if k == "ai_api_key":
-            val_str = str(v).strip()
-            if val_str and val_str != "__PRESERVED__":
-                repo.set_setting(k, val_str)
-        else:
-            repo.set_setting(k, str(v))
+        repo.set_setting(k, str(v).strip())
     return {"status": "saved"}
 
 @app.get("/api/settings/health")

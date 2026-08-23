@@ -41,11 +41,18 @@ def create_dossier(target_name: str, seed_username: str = "", seed_email: str = 
             conn.close()
     return with_db_retry(_op)
 
-def update_dossier_ai_briefing(dossier_id: str, briefing_data: Dict[str, Any]):
+def update_dossier_ai_briefing(dossier_id: str, briefing_data: Dict[str, Any], email_result: Optional[Dict[str, Any]] = None, phone_result: Optional[Dict[str, Any]] = None):
     def _op():
         conn = get_connection()
         try:
             cursor = conn.cursor()
+            # Persist the full briefing plus identity probe results so historical
+            # dossiers can be fully reconstructed in the UI.
+            metadata = {
+                "briefing": briefing_data,
+                "email_result": email_result,
+                "phone_result": phone_result
+            }
             cursor.execute("""
             UPDATE dossiers 
             SET ai_briefing = ?, confidence = ?, inferred_identity = ?, metadata_json = ?
@@ -54,7 +61,7 @@ def update_dossier_ai_briefing(dossier_id: str, briefing_data: Dict[str, Any]):
                 briefing_data.get("briefing", ""),
                 briefing_data.get("confidence", 0),
                 briefing_data.get("inferred_identity") or (briefing_data.get("verified_identities", [None])[0]),
-                json.dumps(briefing_data),
+                json.dumps(metadata, ensure_ascii=False, default=str),
                 dossier_id
             ))
             conn.commit()

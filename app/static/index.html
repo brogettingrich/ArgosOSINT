@@ -2,35 +2,41 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArgosOSINT - High-Precision Intelligence Engine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <title>ARGOS // OSINT Core</title>
   <link rel="stylesheet" href="/static/css/main.css">
   <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="stylesheet" href="/static/css/mobile.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Header -->
+  <!-- Terminal Header -->
   <header class="app-header">
     <div class="brand-wrapper">
-      <div class="brand-logo"></div>
+      <div class="brand-logo-dot"></div>
       <div class="brand-title">ARGOS // OSINT</div>
-      <div class="brand-badge">CORE V3.2</div>
+      <div class="brand-meta">SYS_V3.3</div>
     </div>
 
+    <!-- Desktop nav tabs (hidden on mobile via mobile.css) -->
     <nav class="nav-tabs">
       <button class="nav-tab-btn active" data-target="view-recon">Target Recon</button>
       <button class="nav-tab-btn" data-target="view-graph">Relationship Graph</button>
       <button class="nav-tab-btn" data-target="view-history">Intelligence Dossiers</button>
     </nav>
 
-    <div style="display:flex;align-items:center;gap:12px;">
-      <div id="ai-global-status" class="ai-status-pill offline" title="Click to configure AI Engine">
-        <span class="status-dot"></span>
-        <span id="ai-status-text">AI ENGINE: CHECKING...</span>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <!-- AI status visible in header on desktop only -->
+      <div id="ai-global-status" style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);cursor:pointer;">
+        <span id="ai-status-text">AI CORE: CHECKING...</span>
       </div>
-      <button id="btn-open-settings" class="btn-settings-gear" title="Engine Settings">Settings</button>
+      <button id="btn-open-settings" class="btn-terminal-action" title="Configure System Settings">[SETTINGS]</button>
     </div>
   </header>
 
@@ -38,58 +44,63 @@
   <main class="main-container">
     <!-- 1. TARGET RECON VIEW -->
     <section id="view-recon" class="view-section active">
-      <!-- Search Card -->
-      <div class="search-card">
+      <!-- Target Input Module -->
+      <div class="terminal-card">
         <div class="card-header-row">
-          <span class="card-title">Target Intelligence Parameters</span>
-          <span id="collision-mode-badge" class="brand-badge" style="color:var(--status-found);">AI REASONING & CONTEXT ENGINE: ACTIVE</span>
+          <span class="terminal-section-title">Reconnaissance Matrix</span>
+          <span id="collision-mode-badge" class="terminal-status-indicator">ENGINE ONLINE</span>
         </div>
 
         <form id="scan-form">
           <div class="grid-inputs">
             <div class="input-group">
-              <label class="input-label" for="input-username">Username / Handle</label>
-              <input type="text" id="input-username" class="form-input" placeholder="e.g. oz_almagor" autocomplete="off">
+              <label class="input-label" for="input-username">Username(s) / List</label>
+              <input type="text" id="input-username" class="form-input" placeholder="e.g. jdoe, target2" autocomplete="off">
             </div>
 
             <div class="input-group">
               <label class="input-label" for="input-name">Known Names / Aliases</label>
-              <input type="text" id="input-name" class="form-input" placeholder="e.g. Oz Almagor" autocomplete="off">
+              <input type="text" id="input-name" class="form-input" placeholder="e.g. John Doe" autocomplete="off">
             </div>
 
             <div class="input-group">
-              <label class="input-label" for="input-location">Location / Country (Optional)</label>
-              <input type="text" id="input-location" class="form-input" placeholder="e.g. Israel, United States" autocomplete="off">
+              <label class="input-label" for="input-location">Location / Country</label>
+              <input type="text" id="input-location" class="form-input" placeholder="e.g. United States, United Kingdom" autocomplete="off">
             </div>
 
             <div class="input-group">
-              <label class="input-label" for="input-phone">Phone Number (Optional)</label>
+              <label class="input-label" for="input-phone">Phone Number</label>
               <input type="text" id="input-phone" class="form-input" placeholder="+1234567890" autocomplete="off">
             </div>
 
             <div class="input-group">
-              <label class="input-label" for="input-email">Email Address (Optional)</label>
+              <label class="input-label" for="input-email">Email Address</label>
               <input type="email" id="input-email" class="form-input" placeholder="target@domain.com" autocomplete="off">
             </div>
           </div>
 
-          <!-- Permutation Preview -->
+          <!-- Permutation Counter -->
           <div id="permutation-preview-bar" class="permutation-bar"></div>
 
-          <!-- Options & Submit -->
-          <div class="options-row">
-            <label class="checkbox-label">
-              <input type="checkbox" id="chk-fuzzy" checked>
-              <span>Enable Permutation Generation (Syllables, country suffix, separators)</span>
-            </label>
+          <!-- AI status inline (mobile only — shown via mobile.css) -->
+          <div id="ai-status-mobile"></div>
 
-            <label class="checkbox-label" style="margin-left:8px;">
-              <input type="checkbox" id="chk-digit-collisions">
-              <span>Enable Digit-Collision Variants (user34 → user034)</span>
-            </label>
+          <!-- Options & Execute -->
+          <div class="options-row">
+            <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+              <label class="checkbox-label">
+                <input type="checkbox" id="chk-fuzzy" checked>
+                <span>Enable Delimiter &amp; Syllable Permutations</span>
+              </label>
+
+              <label class="checkbox-label">
+                <input type="checkbox" id="chk-digits">
+                <span>Enable Numeric &amp; Digit Collision Permutations</span>
+              </label>
+            </div>
 
             <button type="submit" id="btn-start-scan" class="btn-launch-scan">
-              Launch Recon Probe
+              Execute Probe
             </button>
           </div>
         </form>
@@ -98,10 +109,10 @@
       <!-- Scan Progress -->
       <div id="progress-panel" class="progress-panel">
         <div class="progress-header">
-          <span id="progress-detail">Initializing target matrix...</span>
+          <span id="progress-detail">Initializing probe matrix...</span>
           <div style="display:flex;align-items:center;gap:12px;">
-            <span id="progress-percent" style="font-weight:600;color:var(--text-primary);">0%</span>
-            <button type="button" id="btn-dismiss-scan" class="btn-dismiss-link">Dismiss</button>
+            <span id="progress-percent" style="color:#ffffff;">0%</span>
+            <button type="button" id="btn-dismiss-scan" class="btn-terminal-action">[DISMISS]</button>
           </div>
         </div>
         <div class="progress-bar-bg">
@@ -109,32 +120,31 @@
         </div>
       </div>
 
-      <!-- AI Briefing Card -->
+      <!-- AI Synthesis Module -->
       <div id="ai-briefing-card" class="briefing-card" style="display:none;">
         <div class="card-header-row">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span class="card-title">Executive OSINT Briefing</span>
-            <span id="briefing-confidence-badge" class="corrob-badge">95% CONFIDENCE</span>
-          </div>
-          <span id="briefing-identity-tag" class="brand-badge" style="color:var(--status-found);">IDENTITY: INFERRED</span>
+          <span class="terminal-section-title">Intelligence Synthesis</span>
+          <span id="briefing-confidence-badge" class="terminal-status-indicator">CONFIDENCE: 95%</span>
         </div>
-        <div id="briefing-text" style="font-size:13px;line-height:1.6;color:var(--text-primary);margin-bottom:12px;"></div>
-        <div id="briefing-rationale" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-bottom:10px;"></div>
-        <div id="briefing-evidence-row" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        <div id="briefing-text" class="briefing-text"></div>
+        <div class="briefing-meta-row">
+          <span id="briefing-identity-tag">IDENTITY: INFERRED</span>
+          <span id="briefing-rationale"></span>
+        </div>
       </div>
 
-      <!-- Category Filter Bar -->
-      <div class="card-header-row" style="margin-top:10px;margin-bottom:0;">
+      <!-- Results Header & Category Filter -->
+      <div class="card-header-row" style="margin-top:8px;margin-bottom:0;">
         <div style="display:flex;align-items:center;gap:12px;">
-          <span id="findings-count" class="card-title">0 Discovered</span>
-          <button type="button" id="btn-reset-results" class="btn-dismiss-link" style="display:none;">Reset Grid</button>
-          <button type="button" id="btn-export-json" class="btn-graph-action" style="display:none;" title="Export findings as a structured JSON dossier">Export JSON</button>
-          <button type="button" id="btn-export-html" class="btn-graph-action" style="display:none;" title="Export a printable HTML intelligence report">Export HTML</button>
+          <span id="findings-count" class="terminal-section-title">0 DISCOVERED</span>
+          <button type="button" id="btn-reset-results" class="btn-terminal-action" style="display:none;">Reset</button>
         </div>
 
-        <div id="filter-row" style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="filter-chip active" data-filter="all">All Entities</button>
-          <button class="filter-chip" data-filter="exact">Exact Matches</button>
+        <div id="filter-row" class="filter-row">
+          <button class="filter-chip active" data-filter="all">All</button>
+          <button class="filter-chip" data-filter="exact">Exact</button>
+          <button class="filter-chip" data-filter="email_pivot">Email Linked</button>
+          <button class="filter-chip" data-filter="breaches">Breaches</button>
           <button class="filter-chip" data-filter="Social">Social</button>
           <button class="filter-chip" data-filter="Developer">Developer</button>
           <button class="filter-chip" data-filter="Gaming">Gaming</button>
@@ -143,19 +153,20 @@
         </div>
       </div>
 
-      <!-- Dynamic Sub-Platform Filter Bar -->
+      <!-- Sub-Filter Bar -->
       <div id="sub-filter-row" class="sub-filter-row" style="display:none;"></div>
 
       <!-- Findings Grid -->
       <div id="results-grid" class="results-grid"></div>
     </section>
 
-    <!-- 2. FULL-WINDOW RELATIONSHIP GRAPH VIEW -->
+    <!-- 2. RELATIONSHIP GRAPH VIEW -->
     <section id="view-graph" class="view-section" style="display:none;height:calc(100vh - 100px);flex-direction:column;">
       <div class="graph-toolbar">
-        <div class="graph-filter-chips" id="graph-category-filters">
-          <button class="filter-chip active" data-graph-cat="all">All Entities</button>
-          <button class="filter-chip" data-graph-cat="exact">Exact Matches</button>
+        <div class="filter-row" id="graph-category-filters">
+          <button class="filter-chip active" data-graph-cat="all">All</button>
+          <button class="filter-chip" data-graph-cat="exact">Exact</button>
+          <button class="filter-chip" data-graph-cat="email_pivot">Email Linked</button>
           <button class="filter-chip" data-graph-cat="Social">Social</button>
           <button class="filter-chip" data-graph-cat="Developer">Developer</button>
           <button class="filter-chip" data-graph-cat="Gaming">Gaming</button>
@@ -163,35 +174,35 @@
         </div>
 
         <div style="display:flex;align-items:center;gap:8px;">
-          <input type="text" id="graph-search-input" class="form-input" placeholder="Search node / handle..." style="padding:4px 10px;font-size:11px;width:180px;">
-          <button id="btn-graph-zoom-in" class="btn-graph-action" title="Zoom In">[+]</button>
-          <button id="btn-graph-zoom-out" class="btn-graph-action" title="Zoom Out">[-]</button>
-          <button id="btn-graph-recenter" class="btn-graph-action" title="Recenter View">Center</button>
-          <button id="btn-graph-freeze" class="btn-graph-action" title="Toggle Physics">Freeze Physics</button>
+          <input type="text" id="graph-search-input" class="form-input" placeholder="Search node..." style="padding:4px 8px;font-size:11px;width:160px;">
+          <button id="btn-graph-zoom-in" class="btn-terminal-action">[+]</button>
+          <button id="btn-graph-zoom-out" class="btn-terminal-action">[-]</button>
+          <button id="btn-graph-recenter" class="btn-terminal-action">[CENTER]</button>
+          <button id="btn-graph-freeze" class="btn-terminal-action">[FREEZE]</button>
         </div>
       </div>
 
-      <div id="graph-platform-sub-filters" class="sub-filter-row" style="display:none;margin-top:6px;margin-bottom:6px;"></div>
+      <div id="graph-platform-sub-filters" class="sub-filter-row" style="display:none;margin-top:4px;margin-bottom:4px;"></div>
 
       <div class="graph-container">
         <canvas id="graphCanvas"></canvas>
       </div>
     </section>
 
-    <!-- 3. DOSSIER HISTORY VIEW -->
+    <!-- 3. INTELLIGENCE DOSSIERS HISTORY VIEW -->
     <section id="view-history" class="view-section" style="display:none;">
-      <div class="search-card">
+      <div class="terminal-card">
         <div class="card-header-row">
-          <span class="card-title">Stored Intelligence Dossiers</span>
+          <span class="terminal-section-title">Stored Intelligence Dossiers</span>
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:var(--font-mono);">
           <thead>
-            <tr style="border-bottom:1px solid var(--border-color);text-align:left;color:var(--text-muted);font-family:var(--font-mono);font-size:10px;">
-              <th style="padding:10px;">TARGET</th>
-              <th style="padding:10px;">SEED IDENTIFIER</th>
-              <th style="padding:10px;">AI CONFIDENCE</th>
-              <th style="padding:10px;">FINDINGS</th>
-              <th style="padding:10px;">TIMESTAMP</th>
+            <tr style="border-bottom:1px solid var(--border-subtle);text-align:left;color:var(--text-muted);">
+              <th style="padding:10px 8px;">TARGET</th>
+              <th style="padding:10px 8px;">SEED IDENTIFIER</th>
+              <th style="padding:10px 8px;">CONFIDENCE</th>
+              <th style="padding:10px 8px;">PROFILES</th>
+              <th style="padding:10px 8px;">TIMESTAMP</th>
             </tr>
           </thead>
           <tbody id="history-tbody"></tbody>
@@ -204,8 +215,8 @@
   <div id="settings-modal" class="modal-overlay" style="display:none;">
     <div class="modal-card">
       <div class="card-header-row">
-        <span class="card-title">Intelligence Engine Settings</span>
-        <button id="btn-close-settings" class="btn-dismiss-link">Close</button>
+        <span class="terminal-section-title">Engine Configuration</span>
+        <button id="btn-close-settings" class="btn-terminal-action">[CLOSE]</button>
       </div>
 
       <form id="settings-form">
@@ -218,62 +229,72 @@
             </select>
           </div>
 
-          <!-- Groq API Key -->
           <div class="input-group" id="group-api-key">
             <label class="input-label">Groq API Key</label>
-            
-            <div id="key-masked-container" style="display:none;align-items:center;justify-content:space-between;background:#09090c;border:1px solid var(--border-color);border-radius:6px;padding:8px 12px;">
-              <span id="key-masked-text" style="font-family:var(--font-mono);font-size:11px;color:var(--status-found);">gsk_...3a1b</span>
-              <button type="button" id="btn-replace-key" class="btn-graph-action" style="padding:3px 8px;font-size:10px;">Replace Key</button>
-            </div>
-
-            <div id="key-input-container" style="display:flex;gap:6px;">
-              <input type="password" id="setting-api-key" class="form-input" placeholder="gsk_..." style="flex:1;">
-              <button type="button" id="btn-toggle-key" class="btn-graph-action">Show</button>
-            </div>
+            <input type="text" id="setting-api-key" class="form-input" placeholder="gsk_..." autocomplete="off" spellcheck="false">
           </div>
 
-          <!-- Local Host Presets -->
           <div class="input-group" id="group-ollama-host" style="display:none;">
             <label class="input-label">Local Host Endpoint</label>
-            <div style="display:flex;gap:6px;margin-bottom:6px;">
-              <select id="setting-host-preset" class="form-input" style="flex:1;">
-                <option value="http://127.0.0.1:11434">Ollama Default (Port 11434)</option>
-                <option value="http://127.0.0.1:1234">LM Studio Default (Port 1234)</option>
-                <option value="http://127.0.0.1:8080">llama.cpp / Kobold (Port 8080)</option>
-                <option value="custom">Custom Endpoint...</option>
-              </select>
-            </div>
+            <select id="setting-host-preset" class="form-input" style="margin-bottom:6px;">
+              <option value="http://127.0.0.1:11434">Ollama Default (Port 11434)</option>
+              <option value="http://127.0.0.1:1234">LM Studio Default (Port 1234)</option>
+              <option value="http://127.0.0.1:8080">llama.cpp / Kobold (Port 8080)</option>
+              <option value="custom">Custom Endpoint...</option>
+            </select>
             <input type="text" id="setting-host" class="form-input" value="http://127.0.0.1:11434">
           </div>
 
-          <!-- Model Selection -->
           <div class="input-group">
             <label class="input-label">Inference Model</label>
             <select id="setting-model-select" class="form-input"></select>
           </div>
 
-          <!-- Enable AI -->
           <label class="checkbox-label" style="margin-top:4px;">
             <input type="checkbox" id="setting-enable-ai" checked>
-            <span>Enable AI Context Synthesis & Executive Briefings</span>
+            <span>Enable AI Context Synthesis &amp; Executive Briefings</span>
           </label>
 
-          <!-- Test Status Box -->
-          <div id="test-status-box" style="display:none;font-family:var(--font-mono);font-size:11px;padding:8px 12px;border-radius:6px;background:#09090c;border:1px solid var(--border-color);"></div>
+          <div id="test-status-box" style="display:none;font-family:var(--font-mono);font-size:11px;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border-subtle);"></div>
 
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:12px;border-top:1px solid var(--border-color);">
-            <button type="button" id="btn-test-ai" class="btn-graph-action">Test Connection</button>
-            <button type="submit" class="btn-launch-scan">Save Settings</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:12px;border-top:1px solid var(--border-subtle);">
+            <button type="button" id="btn-test-ai" class="btn-terminal-action">[TEST CONNECTION]</button>
+            <button type="submit" class="btn-launch-scan">SAVE CONFIG</button>
           </div>
         </div>
       </form>
     </div>
   </div>
 
+  <!-- Bottom Navigation Bar (mobile only — shown via mobile.css) -->
+  <!-- Graph tab intentionally omitted from mobile nav per user request -->
+  <nav class="bottom-nav" aria-label="Primary navigation">
+    <button class="bottom-nav-btn active" data-target="view-recon" aria-label="Target Recon">
+      <!-- Crosshair / target icon -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/>
+        <circle cx="12" cy="12" r="3"/>
+        <line x1="12" y1="3" x2="12" y2="6"/>
+        <line x1="12" y1="18" x2="12" y2="21"/>
+        <line x1="3" y1="12" x2="6" y2="12"/>
+        <line x1="18" y1="12" x2="21" y2="12"/>
+      </svg>
+      Recon
+    </button>
+
+    <button class="bottom-nav-btn" data-target="view-history" aria-label="Intelligence Dossiers">
+      <!-- File / dossier icon -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="8" y1="13" x2="16" y2="13"/>
+        <line x1="8" y1="17" x2="13" y2="17"/>
+      </svg>
+      Dossiers
+    </button>
+  </nav>
+
   <script src="/static/js/graph.js"></script>
-  <script src="/static/js/api.js"></script>
-  <script src="/static/js/export.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

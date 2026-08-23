@@ -1,71 +1,78 @@
+/* ==========================================================================
+   ARGOS // OSINT - HIGH-END ENGINEERING TERMINAL DASHBOARD
+   Strict Guidelines:
+   1. Palette: Pitch Black (#000000), Deep Obsidian (#040406, #09090d), High Contrast Whites (#ffffff, #e4e4e7, #a1a1aa).
+   2. Layout: Borderless Structure. Negative Space & Clean Spacing.
+   3. Content: 0 Emojis, 0 Badges, Raw Minimalist Monospace Indicators & Data Tables.
+   4. Typography: Sharp Monospace (JetBrains Mono / Geist / SF Mono) + Crisp Inter.
+   ========================================================================== */
+
 :root {
-  --bg-primary: #000000;
-  --bg-secondary: #050507;
-  --bg-tertiary: #0a0a0e;
-  --bg-card: #070709;
-  --bg-card-hover: #0c0c10;
-  --border-color: rgba(255, 255, 255, 0.06);
-  --border-active: rgba(255, 255, 255, 0.14);
-  --text-primary: #f4f4f5;
+  --bg-pitch: #000000;
+  --bg-layer-1: #030305;
+  --bg-layer-2: #07070a;
+  --bg-layer-3: #0c0c10;
+  --bg-input: #050508;
+
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-focus: rgba(255, 255, 255, 0.28);
+
+  --text-primary: #ffffff;
   --text-secondary: #a1a1aa;
   --text-muted: #52525b;
-  --accent-color: #ffffff;
-  --status-found: #10b981;
-  --status-found-bg: rgba(16, 185, 129, 0.08);
-  --status-searching: #06b6d4;
-  --status-warn: #f59e0b;
-  --status-error: #ef4444;
+  --text-subtle: #3f3f46;
+
+  --accent-green: #10b981;
+  --accent-cyan: #06b6d4;
+  --accent-amber: #f59e0b;
+  --accent-red: #ef4444;
+
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Geist Mono', Menlo, Consolas, monospace;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  -webkit-tap-highlight-color: transparent;
 }
 
-body {
-  background-color: var(--bg-primary);
+html, body {
+  background-color: var(--bg-pitch);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   overflow-x: hidden;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-/* Chrome/Edge Dark Autofill Overrides */
+/* Chrome/Safari Dark Autofill Override */
 input:-webkit-autofill,
 input:-webkit-autofill:hover, 
-input:-webkit-autofill:focus,
+input:-webkit-autofill:focus, 
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 1000px #09090c inset !important;
-  -webkit-text-fill-color: #f4f4f5 !important;
-  caret-color: #f4f4f5 !important;
+  -webkit-box-shadow: 0 0 0 1000px #050508 inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff !important;
   transition: background-color 5000s ease-in-out 0s;
 }
 
-/* Header & Navigation */
+/* Engineering Terminal Header */
 .app-header {
-  background: rgba(0, 0, 0, 0.95);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border-color);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  padding: 12px 24px;
+  height: 52px;
+  background: var(--bg-pitch);
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 28px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .brand-wrapper {
@@ -74,84 +81,72 @@ input:-webkit-autofill:active {
   gap: 12px;
 }
 
-.brand-logo {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.brand-logo::after {
-  content: '';
-  width: 5px;
-  height: 5px;
-  background: var(--status-found);
-  border-radius: 50%;
+.brand-logo-dot {
+  width: 7px;
+  height: 7px;
+  background: #ffffff;
+  border-radius: 1px;
 }
 
 .brand-title {
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.8px;
-  color: var(--text-primary);
+  letter-spacing: 1.5px;
+  color: #ffffff;
+  text-transform: uppercase;
 }
 
-.brand-badge {
-  font-size: 9px;
+.brand-meta {
   font-family: var(--font-mono);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  font-size: 10px;
   color: var(--text-muted);
-  padding: 2px 7px;
-  border-radius: 4px;
   letter-spacing: 0.5px;
 }
 
+/* Terminal Tab Navigation */
 .nav-tabs {
   display: flex;
-  background: #08080b;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 2px;
-  gap: 2px;
+  gap: 4px;
+  background: transparent;
 }
 
 .nav-tab-btn {
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 500;
   padding: 6px 14px;
-  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  transition: color 0.15s ease;
 }
 
 .nav-tab-btn:hover {
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 .nav-tab-btn.active {
-  background: #121217;
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
+  color: #ffffff;
+  font-weight: 600;
+  border-bottom: 2px solid #ffffff;
 }
 
+/* Main Engineering Container */
 .main-container {
-  max-width: 1200px;
-  width: 100%;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 24px 20px;
-  flex: 1;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .view-section {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }

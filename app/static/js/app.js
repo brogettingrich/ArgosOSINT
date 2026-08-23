@@ -1,6 +1,8 @@
 let currentFindings = [];
 let currentEmailInfo = null;
 let currentPhoneInfo = null;
+let currentEmailPivots = [];
+let currentBreachRecords = [];
 let currentBriefingData = null;
 let graphVisualizer = null;
 let currentEventSource = null;
@@ -9,10 +11,13 @@ let activePlatformFilter = 'all';
 let isAIOnline = false;
 
 const FALLBACK_GROQ_MODELS = [
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recommended - High Accuracy)' },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-Fast)' },
-  { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B (High Context)' },
-  { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT' }
+  { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B (Recommended · High Limit & Ultra-Fast)' },
+  { id: 'groq/compound-mini', name: 'Groq Compound Mini (Fast & Generous Limits)' },
+  { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (High Intelligence Flagship)' },
+  { id: 'qwen/qwen3.6-27b', name: 'Qwen 3.6 27B (Reasoning Preview)' },
+  { id: 'allam-2-7b', name: 'Allam 2 7B' },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant' }
 ];
 
 const LOCAL_MODELS = [
@@ -30,32 +35,43 @@ document.addEventListener('DOMContentLoaded', () => {
   setupGraphControls();
   setupDismissControls();
   setupSettingsModal();
-  setupExportControls();
   initLiveHealthCheck();
 });
 
 function setupNavigation() {
-  document.querySelectorAll('.nav-tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.view-section').forEach(s => s.style.display = 'none');
-      btn.classList.add('active');
-      const targetView = document.getElementById(btn.dataset.target);
-      if (targetView) targetView.style.display = 'block';
+  // Unified handler for both desktop (.nav-tab-btn) and mobile (.bottom-nav-btn)
+  function activateTab(targetId) {
+    document.querySelectorAll('.view-section').forEach(s => s.style.display = 'none');
+    document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.bottom-nav-btn').forEach(b => b.classList.remove('active'));
 
-      if (btn.dataset.target === 'view-graph' && graphVisualizer) {
-        setTimeout(() => {
-          graphVisualizer.resize();
-          const target = document.getElementById('input-username').value || document.getElementById('input-name').value || 'Target';
-          if (currentFindings.length > 0 || currentEmailInfo || currentPhoneInfo) {
-            graphVisualizer.buildFromScan(target, currentFindings, currentEmailInfo, currentPhoneInfo);
-          }
-        }, 50);
-      }
-      if (btn.dataset.target === 'view-history') {
-        loadHistory();
-      }
-    });
+    const targetView = document.getElementById(targetId);
+    if (targetView) targetView.style.display = 'flex';
+
+    // Sync active class on both nav sets
+    document.querySelectorAll(`.nav-tab-btn[data-target="${targetId}"]`).forEach(b => b.classList.add('active'));
+    document.querySelectorAll(`.bottom-nav-btn[data-target="${targetId}"]`).forEach(b => b.classList.add('active'));
+
+    if (targetId === 'view-graph' && graphVisualizer) {
+      setTimeout(() => {
+        graphVisualizer.resize();
+        const target = document.getElementById('input-username').value || document.getElementById('input-name').value || 'Target';
+        if (currentFindings.length > 0 || currentEmailInfo || currentPhoneInfo) {
+          graphVisualizer.buildFromScan(target, currentFindings, currentEmailInfo, currentPhoneInfo);
+        }
+      }, 50);
+    }
+    if (targetId === 'view-history') {
+      loadHistory();
+    }
+  }
+
+  document.querySelectorAll('.nav-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn.dataset.target));
+  });
+
+  document.querySelectorAll('.bottom-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn.dataset.target));
   });
 }
 
@@ -141,11 +157,11 @@ function updateGraphSubFilterBar() {
     subBar.style.display = 'flex';
     subBar.innerHTML = `
       <button class="sub-chip ${graphVisualizer.activePlatform === 'all' ? 'active' : ''}" data-site="all">
-        All ${currentCat === 'all' ? 'Platforms' : currentCat} (${relevantFindings.length})
+        ALL (${relevantFindings.length})
       </button>
       ${sites.map(s => `
         <button class="sub-chip ${graphVisualizer.activePlatform === s ? 'active' : ''}" data-site="${s}">
-          ${s} (${siteCounts[s]})
+          ${s.toUpperCase()} (${siteCounts[s]})
         </button>
       `).join('')}
     `;
@@ -183,14 +199,14 @@ function updateSubFilterBar() {
 
       subBar.innerHTML = `
         <button class="sub-chip ${activePlatformFilter === 'all' ? 'active' : ''}" data-site="all">
-          All ${activeCategoryFilter} (${totalInCat})
+          ALL ${activeCategoryFilter.toUpperCase()} (${totalInCat})
         </button>
       ` + sites.map(site => {
         const count = siteCounts[site];
         const isActive = (activePlatformFilter === site);
         return `
           <button class="sub-chip ${isActive ? 'active' : ''}" data-site="${site}">
-            ${site} (${count})
+            ${site.toUpperCase()} (${count})
           </button>
         `;
       }).join('');
@@ -220,9 +236,12 @@ function setupDismissControls() {
       currentEventSource.close();
       currentEventSource = null;
     }
-    document.getElementById('progress-panel').style.display = 'none';
-    document.getElementById('progress-bar-fill').style.width = '0%';
-    document.getElementById('progress-percent').innerText = '0%';
+    const panel = document.getElementById('progress-panel');
+    const bar = document.getElementById('progress-bar-fill');
+    const pct = document.getElementById('progress-percent');
+    if (panel) panel.style.display = 'none';
+    if (bar) bar.style.width = '0%';
+    if (pct) pct.innerText = '0%';
   };
 
   if (dismissBtn) dismissBtn.addEventListener('click', doDismiss);
@@ -232,9 +251,13 @@ function setupDismissControls() {
       currentFindings = [];
       currentEmailInfo = null;
       currentPhoneInfo = null;
+      currentEmailPivots = [];
+      currentBreachRecords = [];
       currentBriefingData = null;
-      document.getElementById('findings-count').innerText = '0 Findings';
-      document.getElementById('ai-briefing-card').style.display = 'none';
+      const count = document.getElementById('findings-count');
+      const briefing = document.getElementById('ai-briefing-card');
+      if (count) count.innerText = '0 DISCOVERED';
+      if (briefing) briefing.style.display = 'none';
       updateSubFilterBar();
       renderFindingsGrid();
       resetBtn.style.display = 'none';
@@ -251,79 +274,113 @@ async function checkAIHealth() {
   try {
     const res = await fetch('/api/settings/health').then(r => r.json());
     statusText.innerText = res.label;
-    statusPill.className = 'ai-status-pill ' + (res.online ? 'online' : 'offline');
     isAIOnline = res.online;
 
     if (res.online) {
+      statusText.style.color = 'var(--accent-green)';
       if (collisionBadge) {
-        collisionBadge.innerText = `AI REASONING & CONTEXT ENGINE: ACTIVE (${res.provider.toUpperCase()})`;
-        collisionBadge.style.color = 'var(--status-found)';
+        collisionBadge.innerText = `ENGINE ACTIVE (${res.provider.toUpperCase()})`;
+        collisionBadge.style.color = 'var(--accent-green)';
       }
     } else {
+      statusText.style.color = 'var(--text-muted)';
       if (collisionBadge) {
-        collisionBadge.innerText = 'CONTEXT & SYLLABLE MATRIX: ACTIVE (LOCAL CORE)';
-        collisionBadge.style.color = 'var(--status-searching)';
+        collisionBadge.innerText = 'LOCAL DETERMINISTIC MODE';
+        collisionBadge.style.color = 'var(--text-secondary)';
       }
     }
   } catch (e) {
-    statusText.innerText = 'AI: OFFLINE (SERVER UNREACHABLE)';
-    statusPill.className = 'ai-status-pill offline';
-    isAIOnline = false;
+    statusText.innerText = 'Offline';
+    statusText.style.color = 'var(--text-muted)';
+  }
+
+  // Mirror AI status to the mobile inline element (visible only on small screens via mobile.css)
+  const mobileStatus = document.getElementById('ai-status-mobile');
+  if (mobileStatus) {
+    mobileStatus.innerText = statusText.innerText;
+    mobileStatus.style.color = statusText.style.color;
   }
 }
 
 function initLiveHealthCheck() {
   checkAIHealth();
-  setInterval(checkAIHealth, 30000);
+  setInterval(checkAIHealth, 12000);
 }
 
 function setupPermutationPreview() {
   const usernameInput = document.getElementById('input-username');
   const nameInput = document.getElementById('input-name');
   const locationInput = document.getElementById('input-location');
+  const fuzzyChk = document.getElementById('chk-fuzzy');
+  const digitsChk = document.getElementById('chk-digits');
   const previewBar = document.getElementById('permutation-preview-bar');
 
+  if (!usernameInput || !previewBar) return;
+
   let debounceTimer;
+
   const updatePreview = () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
-      const username = usernameInput.value.trim();
-      const rawNames = nameInput.value.trim();
-      const location = locationInput ? locationInput.value.trim() : '';
+      const u = usernameInput.value.trim();
+      const n = nameInput.value.trim();
+      const loc = locationInput ? locationInput.value.trim() : '';
+      const allowFuzzy = fuzzyChk ? fuzzyChk.checked : true;
+      const allowDigits = digitsChk ? digitsChk.checked : false;
 
-      if (!username && !rawNames) {
+      if (!u && !n) {
+        previewBar.style.display = 'none';
         previewBar.innerHTML = '';
         return;
       }
 
-      const known_names = rawNames ? rawNames.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const names = n ? n.split(',').map(s => s.trim()).filter(Boolean) : [];
+
       try {
         const res = await fetch('/api/permutations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, known_names, location, enable_digit_collisions: false })
+          body: JSON.stringify({
+            username: u,
+            known_names: names,
+            location: loc,
+            enable_digit_collisions: allowDigits
+          })
         }).then(r => r.json());
 
-        const perms = res.permutations || [];
-        if (perms.length > 0) {
+        let perms = res.permutations || [];
+        if (!allowFuzzy) {
+          perms = perms.filter(p => p.is_seed);
+        }
+
+        if (perms.length > 1) {
+          const seeds = perms.filter(p => p.is_seed).map(p => `@${p.username}`);
+          const nonSeeds = perms.filter(p => !p.is_seed).map(p => `@${p.username}`);
+          const displayCount = Math.min(perms.length, 12);
+          const shown = [...seeds, ...nonSeeds].slice(0, displayCount);
+          const remainder = perms.length - shown.length;
+
+          previewBar.style.display = 'block';
           previewBar.innerHTML = `
-            <div class="variants-badge">
-              <span class="badge-dot"></span>
-              <span>${perms.length} target handle variations active in scan matrix</span>
-            </div>
+            <span>TARGET MUTATIONS (${perms.length} IDENTIFIERS):</span>
+            <span style="color:var(--text-secondary);">${shown.join(' · ')}${remainder > 0 ? ` · +${remainder} more` : ''}</span>
           `;
         } else {
+          previewBar.style.display = 'none';
           previewBar.innerHTML = '';
         }
       } catch (e) {
+        previewBar.style.display = 'none';
         previewBar.innerHTML = '';
       }
-    }, 300);
+    }, 250);
   };
 
   usernameInput.addEventListener('input', updatePreview);
   nameInput.addEventListener('input', updatePreview);
   if (locationInput) locationInput.addEventListener('input', updatePreview);
+  if (fuzzyChk) fuzzyChk.addEventListener('change', updatePreview);
+  if (digitsChk) digitsChk.addEventListener('change', updatePreview);
 }
 
 async function setupSettingsModal() {
@@ -333,7 +390,6 @@ async function setupSettingsModal() {
   const form = document.getElementById('settings-form');
   const providerSelect = document.getElementById('setting-provider');
   const keyInput = document.getElementById('setting-api-key');
-  const toggleKeyBtn = document.getElementById('btn-toggle-key');
   const modelSelect = document.getElementById('setting-model-select');
   const hostPresetSelect = document.getElementById('setting-host-preset');
   const hostInput = document.getElementById('setting-host');
@@ -343,19 +399,12 @@ async function setupSettingsModal() {
   const testBtn = document.getElementById('btn-test-ai');
   const testStatus = document.getElementById('test-status-box');
 
-  const keyMaskedContainer = document.getElementById('key-masked-container');
-  const keyMaskedText = document.getElementById('key-masked-text');
-  const keyInputContainer = document.getElementById('key-input-container');
-  const btnReplaceKey = document.getElementById('btn-replace-key');
-
-  let hasStoredApiKey = false;
-  let isReplacingKey = false;
-
   const populateModels = async (provider, chosenModel) => {
     if (provider === 'groq') {
       let modelsToUse = FALLBACK_GROQ_MODELS;
       try {
-        const res = await fetch('/api/models/live').then(r => r.json());
+        const apiKey = (keyInput ? keyInput.value.trim() : '') || localStorage.getItem('argos_groq_api_key') || '';
+        const res = await fetch(`/api/models/live?key=${encodeURIComponent(apiKey)}`).then(r => r.json());
         if (res && res.models && res.models.length > 0) {
           modelsToUse = res.models;
         }
@@ -376,13 +425,6 @@ async function setupSettingsModal() {
     if (providerSelect.value === 'groq') {
       groupKey.style.display = 'flex';
       groupHost.style.display = 'none';
-      if (hasStoredApiKey && !isReplacingKey) {
-        keyMaskedContainer.style.display = 'flex';
-        keyInputContainer.style.display = 'none';
-      } else {
-        keyMaskedContainer.style.display = 'none';
-        keyInputContainer.style.display = 'flex';
-      }
       populateModels('groq', modelSelect.value);
     } else {
       groupKey.style.display = 'none';
@@ -390,16 +432,6 @@ async function setupSettingsModal() {
       populateModels('local', modelSelect.value);
     }
   };
-
-  if (btnReplaceKey) {
-    btnReplaceKey.addEventListener('click', () => {
-      isReplacingKey = true;
-      keyMaskedContainer.style.display = 'none';
-      keyInputContainer.style.display = 'flex';
-      keyInput.value = '';
-      keyInput.focus();
-    });
-  }
 
   if (hostPresetSelect) {
     hostPresetSelect.addEventListener('change', () => {
@@ -409,107 +441,128 @@ async function setupSettingsModal() {
     });
   }
 
-  // Load Settings from Server
+  // Load persistent settings from Server with localStorage sync
   try {
     const serverSettings = await fetch('/api/settings').then(r => r.json());
     if (serverSettings.ai_provider) providerSelect.value = serverSettings.ai_provider;
     if (serverSettings.ai_host) hostInput.value = serverSettings.ai_host;
     enableAiChk.checked = serverSettings.enable_ai !== false;
 
-    hasStoredApiKey = Boolean(serverSettings.has_api_key);
-    if (hasStoredApiKey && serverSettings.masked_api_key) {
-      keyMaskedText.innerText = `Stored Key: ${serverSettings.masked_api_key}`;
+    const storedKey = serverSettings.ai_api_key || localStorage.getItem('argos_groq_api_key') || '';
+    if (keyInput) {
+      keyInput.value = storedKey;
+      if (storedKey) {
+        localStorage.setItem('argos_groq_api_key', storedKey);
+      }
     }
+
     await populateModels(providerSelect.value, serverSettings.ai_model);
   } catch (e) {}
+
+  if (keyInput) {
+    keyInput.addEventListener('input', () => {
+      const val = keyInput.value.trim();
+      if (val) {
+        localStorage.setItem('argos_groq_api_key', val);
+      }
+    });
+  }
 
   providerSelect.addEventListener('change', updateVisibility);
   updateVisibility();
 
-  openBtn.addEventListener('click', () => {
-    modal.style.display = 'flex';
-    testStatus.style.display = 'none';
-    isReplacingKey = false;
-    updateVisibility();
-  });
+  if (openBtn) {
+    openBtn.addEventListener('click', () => {
+      modal.style.display = 'flex';
+      testStatus.style.display = 'none';
+      const localBackup = localStorage.getItem('argos_groq_api_key');
+      if (localBackup && keyInput && !keyInput.value) {
+        keyInput.value = localBackup;
+      }
+      updateVisibility();
+    });
+  }
 
-  closeBtn.addEventListener('click', () => {
-    modal.style.display = 'none';
-  });
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+  }
 
-  toggleKeyBtn.addEventListener('click', () => {
-    if (keyInput.type === 'password') {
-      keyInput.type = 'text';
-      toggleKeyBtn.innerText = 'Hide';
-    } else {
-      keyInput.type = 'password';
-      toggleKeyBtn.innerText = 'Show';
-    }
-  });
+  if (testBtn) {
+    testBtn.addEventListener('click', async () => {
+      testStatus.style.display = 'block';
+      testStatus.style.color = 'var(--text-secondary)';
+      testStatus.innerText = 'Connecting to inference server...';
 
-  testBtn.addEventListener('click', async () => {
-    testStatus.style.display = 'block';
-    testStatus.style.color = 'var(--status-searching)';
-    testStatus.innerText = 'Connecting to inference server...';
+      const apiKey = keyInput.value.trim();
+      if (apiKey) {
+        localStorage.setItem('argos_groq_api_key', apiKey);
+      }
 
-    const apiKeyPayload = isReplacingKey ? keyInput.value.trim() : '__PRESERVED__';
+      const payload = {
+        ai_provider: providerSelect.value,
+        ai_api_key: apiKey,
+        ai_model: modelSelect.value,
+        ai_host: hostInput.value.trim(),
+        enable_ai: enableAiChk.checked
+      };
 
-    const payload = {
-      ai_provider: providerSelect.value,
-      ai_api_key: apiKeyPayload,
-      ai_model: modelSelect.value,
-      ai_host: hostInput.value.trim(),
-      enable_ai: enableAiChk.checked
-    };
+      try {
+        const res = await fetch('/api/settings/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(r => r.json());
 
-    try {
-      const res = await fetch('/api/settings/test', {
+        if (res.success) {
+          testStatus.style.color = 'var(--accent-green)';
+          testStatus.innerText = `ONLINE: ${res.message}`;
+          if (res.discovered_host && hostInput) {
+            hostInput.value = res.discovered_host;
+          }
+        } else {
+          testStatus.style.color = 'var(--accent-red)';
+          testStatus.innerText = `FAILED: ${res.error || 'Connection failed'}`;
+        }
+      } catch (e) {
+        testStatus.style.color = 'var(--accent-red)';
+        testStatus.innerText = `ERROR: ${e.message}`;
+      }
+    });
+  }
+
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const apiKey = keyInput.value.trim();
+      if (apiKey) {
+        localStorage.setItem('argos_groq_api_key', apiKey);
+      }
+
+      const payload = {
+        ai_provider: providerSelect.value,
+        ai_api_key: apiKey,
+        ai_model: modelSelect.value,
+        ai_host: hostInput.value.trim(),
+        enable_ai: enableAiChk.checked
+      };
+
+      await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-      }).then(r => r.json());
+      });
 
-      if (res.success) {
-        testStatus.style.color = 'var(--status-found)';
-        testStatus.innerText = `Online: ${res.message}`;
-        if (res.discovered_host && hostInput) {
-          hostInput.value = res.discovered_host;
-        }
-      } else {
-        testStatus.style.color = 'var(--status-error)';
-        testStatus.innerText = `Failed: ${res.error || 'Connection failed'}`;
-      }
-    } catch (e) {
-      testStatus.style.color = 'var(--status-error)';
-      testStatus.innerText = `Error: ${e.message}`;
-    }
-  });
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const apiKeyPayload = (isReplacingKey && keyInput.value.trim()) ? keyInput.value.trim() : '__PRESERVED__';
-
-    const payload = {
-      ai_provider: providerSelect.value,
-      ai_api_key: apiKeyPayload,
-      ai_model: modelSelect.value,
-      ai_host: hostInput.value.trim(),
-      enable_ai: enableAiChk.checked
-    };
-
-    await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      modal.style.display = 'none';
+      checkAIHealth();
     });
-
-    modal.style.display = 'none';
-    checkAIHealth();
-  });
+  }
 }
 
 function setupFormSubmit() {
   const form = document.getElementById('scan-form');
+  if (!form) return;
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     startReconScan();
@@ -522,17 +575,19 @@ function startReconScan() {
   const location = document.getElementById('input-location') ? document.getElementById('input-location').value.trim() : '';
   const email = document.getElementById('input-email').value.trim();
   const phone = document.getElementById('input-phone').value.trim();
-  const enable_permutations = document.getElementById('chk-fuzzy').checked;
-  const enable_digit_collisions = document.getElementById('chk-digit-collisions') ? document.getElementById('chk-digit-collisions').checked : false;
+  const enable_permutations = document.getElementById('chk-fuzzy') ? document.getElementById('chk-fuzzy').checked : true;
+  const enable_digit_collisions = document.getElementById('chk-digits') ? document.getElementById('chk-digits').checked : false;
 
   if (!username && !email && !phone && !known_names) {
-    alert('Please provide at least a Username, Name, Email, or Phone Number to begin.');
+    alert('Please enter at least a Username, Name, Email, or Phone Number to begin.');
     return;
   }
 
   currentFindings = [];
   currentEmailInfo = null;
   currentPhoneInfo = null;
+  currentEmailPivots = [];
+  currentBreachRecords = [];
   currentBriefingData = null;
 
   const progressPanel = document.getElementById('progress-panel');
@@ -540,9 +595,9 @@ function startReconScan() {
   const findingsCount = document.getElementById('findings-count');
   const resetBtn = document.getElementById('btn-reset-results');
 
-  progressPanel.style.display = 'block';
-  briefingCard.style.display = 'none';
-  findingsCount.innerText = 'Probing Target Matrix...';
+  if (progressPanel) progressPanel.style.display = 'block';
+  if (briefingCard) briefingCard.style.display = 'none';
+  if (findingsCount) findingsCount.innerText = 'PROBING TARGET MATRIX...';
   if (resetBtn) resetBtn.style.display = 'inline-flex';
 
   updateSubFilterBar();
@@ -569,12 +624,50 @@ function startReconScan() {
     const data = JSON.parse(event.data);
 
     if (data.type === 'init') {
-      document.getElementById('progress-detail').innerText = `Session initialized (Dossier #${data.dossier_id})`;
+      const detail = document.getElementById('progress-detail');
+      if (detail) detail.innerText = `Session Initialized (Dossier #${data.dossier_id.substring(0, 8)})`;
     }
 
     if (data.type === 'email_result') {
       currentEmailInfo = data.data;
       renderFindingsGrid();
+    }
+
+    if (data.type === 'email_pivots') {
+      currentEmailPivots = data.pivots || [];
+      currentBreachRecords = data.breaches || [];
+
+      (data.pivots || []).forEach(p => {
+        const exists = currentFindings.some(f => f.site === p.service && f.username === p.username);
+        if (!exists) {
+          currentFindings.push({
+            site: p.service,
+            category: p.category || 'Email Pivot',
+            username: p.username,
+            profile_url: p.profile_url,
+            found: true,
+            status_code: 200,
+            is_seed: true,
+            is_email_pivot: true,
+            corroboration: { score: 95, verdict: 'EMAIL REGISTERED' },
+            metadata: {
+              display_name: p.display_name,
+              bio: p.bio,
+              avatar_url: p.avatar_url,
+              metrics: p.metrics || {}
+            }
+          });
+        }
+      });
+
+      const countEl = document.getElementById('findings-count');
+      if (countEl) countEl.innerText = `${currentFindings.length} DISCOVERED`;
+      updateSubFilterBar();
+      updateGraphSubFilterBar();
+      renderFindingsGrid();
+      if (graphVisualizer) {
+        graphVisualizer.buildFromScan(username || known_names || email || phone, currentFindings, currentEmailInfo, currentPhoneInfo);
+      }
     }
 
     if (data.type === 'phone_result') {
@@ -585,13 +678,18 @@ function startReconScan() {
     if (data.type === 'probe_result') {
       const res = data.result;
       const progress = data.progress;
-      document.getElementById('progress-percent').innerText = `${progress.percent}%`;
-      document.getElementById('progress-detail').innerText = `Probing ${res.site} (@${res.username})...`;
-      document.getElementById('progress-bar-fill').style.width = `${progress.percent}%`;
+      const pctEl = document.getElementById('progress-percent');
+      const detailEl = document.getElementById('progress-detail');
+      const barFill = document.getElementById('progress-bar-fill');
+      const countEl = document.getElementById('findings-count');
+
+      if (pctEl) pctEl.innerText = `${progress.percent}%`;
+      if (detailEl) detailEl.innerText = `Probing ${res.site} (@${res.username})...`;
+      if (barFill) barFill.style.width = `${progress.percent}%`;
 
       if (res.found) {
         currentFindings.push(res);
-        document.getElementById('findings-count').innerText = `${currentFindings.length} Discovered`;
+        if (countEl) countEl.innerText = `${currentFindings.length} DISCOVERED`;
         updateSubFilterBar();
         updateGraphSubFilterBar();
         renderFindingsGrid();
@@ -607,39 +705,35 @@ function startReconScan() {
       const confBadge = document.getElementById('briefing-confidence-badge');
       const identTag = document.getElementById('briefing-identity-tag');
       const rationaleEl = document.getElementById('briefing-rationale');
-      const evidenceRow = document.getElementById('briefing-evidence-row');
 
       currentBriefingData = data.briefing;
 
       if (card && text) {
-        text.innerText = data.briefing.briefing || data.briefing;
+        let briefingContent = (typeof data.briefing === 'string') ? data.briefing : (data.briefing.briefing || '');
+        briefingContent = briefingContent.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        briefingContent = briefingContent.replace(/<think>[\s\S]*/gi, '');
+        briefingContent = briefingContent.replace(/```(?:json)?[\s\S]*?```/gi, '');
+        briefingContent = briefingContent.replace(/^(?:Here's a thinking process|Analysis|Reasoning|Output|Draft Briefing):\s*/gi, '');
+        briefingContent = briefingContent.replace(/[\*\#\_`]/g, '').trim();
+
+        text.innerText = briefingContent;
         
         if (confBadge && data.briefing.confidence !== undefined) {
-          confBadge.innerText = `${data.briefing.confidence}% CONFIDENCE`;
+          confBadge.innerText = `CONFIDENCE: ${data.briefing.confidence}%`;
         }
 
         if (identTag) {
           if (data.briefing.verified_identities && data.briefing.verified_identities.length > 0) {
             identTag.innerText = `VERIFIED: ${data.briefing.verified_identities.join(', ')}`;
-            identTag.style.color = 'var(--status-found)';
+            identTag.style.color = 'var(--accent-green)';
           } else if (data.briefing.inferred_identity) {
             identTag.innerText = `INFERRED: ${data.briefing.inferred_identity}`;
-            identTag.style.color = 'var(--status-warn)';
-          } else {
-            identTag.innerText = 'IDENTITY: INFERRED';
+            identTag.style.color = 'var(--accent-amber)';
           }
         }
 
         if (rationaleEl && data.briefing.rationale) {
           rationaleEl.innerText = `Rationale: ${data.briefing.rationale}`;
-        }
-
-        if (evidenceRow && Array.isArray(data.briefing.evidence) && data.briefing.evidence.length > 0) {
-          evidenceRow.innerHTML = data.briefing.evidence.map(ev => `
-            <a href="${ev.url}" target="_blank" rel="noopener noreferrer" class="sub-chip" style="font-size:10px;text-decoration:none;">
-              ${ev.site} (@${ev.username}) [↗]
-            </a>
-          `).join('');
         }
 
         card.style.display = 'block';
@@ -648,33 +742,60 @@ function startReconScan() {
 
     if (data.type === 'complete') {
       currentEventSource.close();
-      document.getElementById('progress-detail').innerText = 'Reconnaissance Complete';
+      const detail = document.getElementById('progress-detail');
+      const pctEl = document.getElementById('progress-percent');
+      const barFill = document.getElementById('progress-bar-fill');
+      if (detail) detail.innerText = 'Probe Sequence Completed';
+      if (pctEl) pctEl.innerText = '100%';
+      if (barFill) barFill.style.width = '100%';
       updateSubFilterBar();
       updateGraphSubFilterBar();
       renderFindingsGrid();
+      if (graphVisualizer) {
+        graphVisualizer.buildFromScan(username || known_names || email || phone, currentFindings, currentEmailInfo, currentPhoneInfo);
+      }
     }
   };
 
   currentEventSource.onerror = () => {
     if (currentEventSource) currentEventSource.close();
-    document.getElementById('progress-detail').innerText = 'Reconnaissance Complete';
+    const detail = document.getElementById('progress-detail');
+    const pctEl = document.getElementById('progress-percent');
+    const barFill = document.getElementById('progress-bar-fill');
+    if (detail) detail.innerText = 'Probe Sequence Completed';
+    if (pctEl) pctEl.innerText = '100%';
+    if (barFill) barFill.style.width = '100%';
     updateSubFilterBar();
     updateGraphSubFilterBar();
     renderFindingsGrid();
+    if (graphVisualizer) {
+      graphVisualizer.buildFromScan(username || known_names || email || phone, currentFindings, currentEmailInfo, currentPhoneInfo);
+    }
   };
 }
 
 function renderFindingsGrid() {
   const grid = document.getElementById('results-grid');
+  if (!grid) return;
   grid.innerHTML = '';
 
-  const hasData = currentFindings.length > 0 ||
-    (currentEmailInfo && currentEmailInfo.valid_syntax) ||
-    (currentPhoneInfo && currentPhoneInfo.valid);
-  const jsonBtn = document.getElementById('btn-export-json');
-  const htmlBtn = document.getElementById('btn-export-html');
-  if (jsonBtn) jsonBtn.style.display = hasData ? 'inline-block' : 'none';
-  if (htmlBtn) htmlBtn.style.display = hasData ? 'inline-block' : 'none';
+  if (activeCategoryFilter === 'breaches') {
+    if (currentBreachRecords.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.gridColumn = '1 / -1';
+      empty.style.padding = '24px';
+      empty.style.textAlign = 'center';
+      empty.style.color = 'var(--text-muted)';
+      empty.style.fontFamily = 'var(--font-mono)';
+      empty.style.fontSize = '11px';
+      empty.style.background = 'var(--bg-layer-1)';
+      empty.innerText = 'NO PUBLIC BREACH RECORDS DETECTED FOR TARGET';
+      grid.appendChild(empty);
+      return;
+    }
+    currentBreachRecords.forEach(b => addBreachCard(b));
+    return;
+  }
 
   if (currentEmailInfo && currentEmailInfo.valid_syntax && (activeCategoryFilter === 'all' || activeCategoryFilter === 'exact')) {
     addEmailCard(currentEmailInfo);
@@ -685,7 +806,8 @@ function renderFindingsGrid() {
 
   let filtered = currentFindings.filter(item => {
     if (activeCategoryFilter === 'all') return true;
-    if (activeCategoryFilter === 'exact') return item.is_seed;
+    if (activeCategoryFilter === 'exact') return item.is_seed && !item.is_email_pivot;
+    if (activeCategoryFilter === 'email_pivot') return item.is_email_pivot;
     if (activeCategoryFilter === 'permutation') return !item.is_seed;
     return item.category === activeCategoryFilter;
   });
@@ -696,23 +818,23 @@ function renderFindingsGrid() {
 
   filtered.sort((a, b) => (b.is_seed ? 1 : 0) - (a.is_seed ? 1 : 0));
 
-  if (filtered.length === 0 && (!currentEmailInfo || !currentEmailInfo.valid_syntax) && (!currentPhoneInfo || !currentPhoneInfo.valid)) {
+  if (filtered.length === 0 && (!currentEmailInfo || !currentEmailInfo.valid_syntax) && (!currentPhoneInfo || !currentPhoneInfo.valid) && (currentBreachRecords.length === 0 || activeCategoryFilter !== 'all')) {
     const empty = document.createElement('div');
     empty.style.gridColumn = '1 / -1';
-    empty.style.padding = '30px';
+    empty.style.padding = '24px';
     empty.style.textAlign = 'center';
     empty.style.color = 'var(--text-muted)';
-    empty.style.background = 'var(--bg-card)';
-    empty.style.border = '1px solid var(--border-color)';
-    empty.style.borderRadius = '10px';
-    empty.innerText = 'No active accounts discovered for this filter criteria.';
+    empty.style.fontFamily = 'var(--font-mono)';
+    empty.style.fontSize = '11px';
+    empty.style.background = 'var(--bg-layer-1)';
+    empty.innerText = 'NO MATCHING TARGET ENTITIES DISCOVERED';
     grid.appendChild(empty);
     return;
   }
 
   const hashMatches = {};
   currentFindings.forEach(f => {
-    const h = f.metadata?.avatar_hash;
+    const h = f.metadata && f.metadata.avatar_hash;
     if (h) {
       if (!hashMatches[h]) hashMatches[h] = [];
       hashMatches[h].push(f.site);
@@ -720,6 +842,10 @@ function renderFindingsGrid() {
   });
 
   filtered.forEach(item => addFindingCard(item, hashMatches));
+
+  if (activeCategoryFilter === 'all' && currentBreachRecords.length > 0) {
+    currentBreachRecords.forEach(b => addBreachCard(b));
+  }
 }
 
 function launchPivotScan(targetHandle) {
@@ -733,14 +859,14 @@ function launchPivotScan(targetHandle) {
 
 function addFindingCard(item, hashMatches = {}) {
   const grid = document.getElementById('results-grid');
+  if (!grid) return;
   const card = document.createElement('div');
   card.className = 'target-card';
   const corrob = item.corroboration || { score: 50, verdict: 'VERIFIED' };
   const meta = item.metadata || {};
   const metrics = meta.metrics || {};
   
-  const aliasTag = corrob.matched_alias ? `<span class="alias-tag">Matched: ${corrob.matched_alias}</span>` : '';
-  const displayName = meta.display_name ? `<div style="font-size:13px;font-weight:600;color:var(--text-primary);">${meta.display_name}</div>` : '';
+  const displayName = meta.display_name ? `<div class="display-name-text">${meta.display_name}</div>` : '';
   
   const avatarHtml = meta.avatar_url ? `
     <img src="${meta.avatar_url}" class="profile-avatar" alt="Avatar" onerror="this.style.display='none';">
@@ -748,142 +874,153 @@ function addFindingCard(item, hashMatches = {}) {
     <div class="profile-avatar-fallback">${item.site.substring(0, 2).toUpperCase()}</div>
   `;
 
-  let avatarMatchBadge = '';
+  let avatarMatchText = '';
   if (meta.avatar_hash && hashMatches[meta.avatar_hash] && hashMatches[meta.avatar_hash].length > 1) {
     const others = hashMatches[meta.avatar_hash].filter(s => s !== item.site);
     if (others.length > 0) {
-      avatarMatchBadge = `<div class="avatar-match-badge">Shared Photo with ${others.join(', ')}</div>`;
+      avatarMatchText = `<div class="avatar-correlate-text">IDENTICAL PHOTO // ${others.join(', ').toUpperCase()}</div>`;
     }
   }
 
   let metricsHtml = '';
   const metricItems = [];
-  if (metrics.followers) metricItems.push(`<span>Followers: <strong>${metrics.followers}</strong></span>`);
-  if (metrics.following) metricItems.push(`<span>Following: <strong>${metrics.following}</strong></span>`);
-  if (metrics.posts) metricItems.push(`<span>Posts: <strong>${metrics.posts}</strong></span>`);
-  if (metrics.repos) metricItems.push(`<span>Repos: <strong>${metrics.repos}</strong></span>`);
+  if (metrics.followers) metricItems.push(`<span class="metric-item">FOLL: <strong>${metrics.followers}</strong></span>`);
+  if (metrics.following) metricItems.push(`<span class="metric-item">FLWG: <strong>${metrics.following}</strong></span>`);
+  if (metrics.posts) metricItems.push(`<span class="metric-item">POSTS: <strong>${metrics.posts}</strong></span>`);
+  if (metrics.repos) metricItems.push(`<span class="metric-item">REPOS: <strong>${metrics.repos}</strong></span>`);
+  if (metrics.karma) metricItems.push(`<span class="metric-item">KARMA: <strong>${metrics.karma}</strong></span>`);
 
   if (metricItems.length > 0) {
-    metricsHtml = `
-      <div class="metrics-row">
-        ${metricItems.map(m => `<div class="metric-badge">${m}</div>`).join('')}
-      </div>
-    `;
+    metricsHtml = `<div class="metrics-row">${metricItems.join(' · ')}</div>`;
   }
 
-  const bioHtml = meta.bio ? `
-    <div class="profile-bio-box">${meta.bio}</div>
-  ` : '';
-
-  let outboundHtml = '';
-  if (meta.outbound_links && meta.outbound_links.length > 0) {
-    outboundHtml = `
-      <div class="outbound-row">
-        ${meta.outbound_links.map(link => {
-          let label = link.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
-          return `<a href="${link}" target="_blank" rel="noopener noreferrer" class="btn-outbound-link">${label} [↗]</a>`;
-        }).join('')}
-      </div>
-    `;
-  }
+  const bioHtml = meta.bio ? `<div class="profile-bio-box">${meta.bio}</div>` : '';
 
   let pivotsHtml = '';
   if (meta.mentioned_handles && meta.mentioned_handles.length > 0) {
     pivotsHtml = `
-      <div class="pivots-container">
-        <span class="pivots-label">Discovered Pivot Handles:</span>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${meta.mentioned_handles.map(h => `
-            <button type="button" class="btn-pivot-chip" onclick="launchPivotScan('${h}')">
-              Pivot @${h} [⤾]
-            </button>
-          `).join('')}
-        </div>
+      <div class="pivot-actions-row">
+        <span class="pivot-label">Pivot:</span>
+        ${meta.mentioned_handles.map(h => `
+          <button type="button" class="btn-pivot-trigger" onclick="launchPivotScan('${h}')">
+            @${h}
+          </button>
+        `).join('')}
       </div>
     `;
+  }
+
+  let indicatorHtml = '';
+  if (item.is_email_pivot) {
+    indicatorHtml = `<span class="corrob-indicator" style="color:var(--accent-cyan, #06b6d4);background:rgba(6, 182, 212, 0.1);border-color:rgba(6, 182, 212, 0.3);">● EMAIL REGISTERED</span>`;
+  } else if (item.is_seed) {
+    indicatorHtml = `<span class="corrob-indicator exact">● EXACT</span>`;
+  } else {
+    indicatorHtml = `<span class="corrob-indicator">● ${corrob.score}% MATCH</span>`;
   }
 
   card.innerHTML = `
     <div class="card-top">
       <span class="platform-name">
-        <span>${item.site}</span>
-        <span class="category-tag">${item.category}</span>
+        <span>${item.site.toUpperCase()}</span>
+        <span class="category-tag">// ${item.is_email_pivot ? 'EMAIL PIVOT' : item.category}</span>
       </span>
-      <span class="corrob-badge ${item.is_seed ? 'exact' : ''}">
-        ${item.is_seed ? 'Exact Match' : `${corrob.score}% Match`}
-      </span>
+      ${indicatorHtml}
     </div>
 
     <div class="profile-header-row">
       ${avatarHtml}
-      <div style="display:flex;flex-direction:column;gap:2px;overflow:hidden;">
+      <div class="profile-meta-col">
         ${displayName}
-        <div class="account-handle">Handle: <strong>@${item.username}</strong></div>
-        ${avatarMatchBadge}
+        <div class="account-handle-text">@${item.username}</div>
+        ${avatarMatchText}
       </div>
     </div>
 
     ${metricsHtml}
-    ${aliasTag}
     ${bioHtml}
-    ${outboundHtml}
     ${pivotsHtml}
 
     <a href="${item.profile_url}" target="_blank" rel="noopener noreferrer" class="btn-profile-link">
-      Open Profile [↗]
+      OPEN PROFILE [↗]
     </a>
+  `;
+  grid.appendChild(card);
+}
+
+function addBreachCard(breach) {
+  const grid = document.getElementById('results-grid');
+  if (!grid) return;
+  const card = document.createElement('div');
+  card.className = 'target-card';
+  card.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+
+  const classesPills = (breach.data_classes || []).map(c => `
+    <span style="font-family:var(--font-mono);font-size:10px;padding:2px 6px;background:rgba(239, 68, 68, 0.15);color:var(--accent-red);border:1px solid rgba(239, 68, 68, 0.3);">
+      ${c}
+    </span>
+  `).join(' ');
+
+  card.innerHTML = `
+    <div class="card-top">
+      <span class="platform-name" style="color:var(--accent-red);">
+        <span>${breach.breach_name.toUpperCase()}</span>
+        <span class="category-tag">// BREACH EXPOSURE</span>
+      </span>
+      <span class="corrob-indicator" style="color:var(--accent-red);background:rgba(239, 68, 68, 0.1);border-color:rgba(239, 68, 68, 0.3);">
+        ● COMPROMISED
+      </span>
+    </div>
+    <div style="font-size:12px;font-weight:600;font-family:var(--font-mono);color:#ffffff;margin-top:6px;margin-bottom:6px;">
+      ${breach.compromised_email}
+    </div>
+    <div class="profile-bio-box">
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);margin-bottom:6px;">
+        EXPOSURE YEAR: <strong>${breach.year}</strong> · IMPACT: <strong>${breach.pwn_count}</strong>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">${classesPills}</div>
+    </div>
   `;
   grid.appendChild(card);
 }
 
 function addEmailCard(emailData) {
   const grid = document.getElementById('results-grid');
+  if (!grid) return;
   const card = document.createElement('div');
   card.className = 'target-card';
 
-  const gravatarLine = emailData.gravatar && emailData.gravatar.exists ? `
-    <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
-      <img src="${emailData.gravatar.avatar_url}" width="28" height="28" style="border-radius:50%;border:1px solid var(--border-color);" onerror="this.style.display='none';">
-      <span style="color:var(--text-muted);font-size:11px;">Gravatar: <strong>${emailData.gravatar.display_name || 'Profile attached'}</strong>
-        ${emailData.gravatar.profile_url ? `<a href="${emailData.gravatar.profile_url}" target="_blank" rel="noopener noreferrer" style="color:var(--status-found);"> [↗]</a>` : ''}
-      </span>
-    </div>
-  ` : '';
-
   card.innerHTML = `
     <div class="card-top">
-      <span class="platform-name">Email Intelligence</span>
-      <span class="category-tag">Identity</span>
+      <span class="platform-name">EMAIL FOOTPRINT</span>
+      <span class="category-tag">// IDENTITY</span>
     </div>
-    <div style="font-size:14px;font-weight:600;color:var(--status-searching);">${emailData.email}</div>
+    <div style="font-size:13px;font-weight:600;font-family:var(--font-mono);color:#ffffff;">${emailData.email}</div>
     <div class="profile-bio-box">
-      <div>Domain: <strong>${emailData.domain}</strong></div>
-      <div>MX Provider: <strong>${emailData.mx_provider || 'Unknown'}</strong></div>
-      <div>Deliverable: <strong>${emailData.deliverable ? 'Confirmed Active' : (emailData.deliverable === false ? 'Not Deliverable' : 'Unknown')}</strong></div>
-      ${emailData.footprints && emailData.footprints.length ? `<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">Footprints: ${emailData.footprints.join(' • ')}</div>` : ''}
+      <div>DOMAIN: <strong>${emailData.domain}</strong></div>
+      <div>MX PROVIDER: <strong>${emailData.mx_provider}</strong></div>
+      <div>DELIVERABLE: <strong>${emailData.deliverable ? 'YES' : 'UNKNOWN'}</strong></div>
     </div>
-    ${gravatarLine}
   `;
   grid.appendChild(card);
 }
 
 function addPhoneCard(phoneData) {
   const grid = document.getElementById('results-grid');
+  if (!grid) return;
   const card = document.createElement('div');
   card.className = 'target-card';
 
   card.innerHTML = `
     <div class="card-top">
-      <span class="platform-name">Telephony Intelligence</span>
-      <span class="category-tag">Identity</span>
+      <span class="platform-name">TELEPHONY INTEL</span>
+      <span class="category-tag">// IDENTITY</span>
     </div>
-    <div style="font-size:14px;font-weight:600;color:var(--status-warn);">${phoneData.e164}</div>
+    <div style="font-size:13px;font-weight:600;font-family:var(--font-mono);color:#ffffff;">${phoneData.e164}</div>
     <div class="profile-bio-box">
-      <div>Country: <strong>${phoneData.country || 'Unknown'} (${phoneData.iso})</strong></div>
-      <div>Intl Format: <strong>${phoneData.intl_format || phoneData.e164}</strong></div>
-      ${phoneData.local_format ? `<div>Local Format: <strong>${phoneData.local_format}</strong></div>` : ''}
-      ${phoneData.wa_me ? `<div>WhatsApp: <a href="${phoneData.wa_me}" target="_blank" rel="noopener noreferrer" style="color:var(--status-found);">Open Chat [↗]</a></div>` : ''}
-      ${phoneData.lookup_dorks && phoneData.lookup_dorks.length ? `<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">Dorks: ${phoneData.lookup_dorks.join(' • ')}</div>` : ''}
+      <div>COUNTRY: <strong>${phoneData.country || 'UNKNOWN'} (${phoneData.iso})</strong></div>
+      <div>FORMAT: <strong>${phoneData.intl_format}</strong></div>
+      ${phoneData.carrier ? `<div>CARRIER: <strong>${phoneData.carrier}</strong></div>` : ''}
     </div>
   `;
   grid.appendChild(card);
@@ -892,123 +1029,25 @@ function addPhoneCard(phoneData) {
 async function loadHistory() {
   const tbody = document.getElementById('history-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;">Loading dossiers...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted);">LOADING DOSSIERS...</td></tr>';
 
   try {
     const history = await fetch('/api/history').then(r => r.json());
     if (history.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted);">No scan dossiers recorded yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted);">NO STORED DOSSIERS</td></tr>';
       return;
     }
 
     tbody.innerHTML = history.map(d => `
-      <tr class="history-row" data-id="${d.id}" style="cursor:pointer;" title="Click to load this dossier">
-        <td style="padding:10px;"><strong>${d.target_name}</strong></td>
-        <td style="font-family:var(--font-mono);font-size:11px;">${d.seed_username || d.seed_email || d.seed_phone}</td>
-        <td><span class="corrob-badge">${d.confidence || '—'}%</span></td>
-        <td>${d.findings_count} Profiles</td>
-        <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${d.created_at}</td>
+      <tr style="border-bottom:1px solid var(--border-subtle);">
+        <td style="padding:10px 8px;color:#ffffff;font-weight:600;">${d.target_name}</td>
+        <td style="padding:10px 8px;color:var(--text-secondary);">${d.seed_username || d.seed_email || d.seed_phone}</td>
+        <td style="padding:10px 8px;color:var(--accent-green);">${d.confidence}%</td>
+        <td style="padding:10px 8px;color:var(--text-secondary);">${d.findings_count} PROFILES</td>
+        <td style="padding:10px 8px;color:var(--text-muted);">${d.created_at}</td>
       </tr>
     `).join('');
-
-    tbody.querySelectorAll('.history-row').forEach(row => {
-      row.addEventListener('click', () => loadDossierToView(row.dataset.id));
-    });
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--status-error);">Failed to load history.</td></tr>';
-  }
-}
-
-function setupExportControls() {
-  const jsonBtn = document.getElementById('btn-export-json');
-  const htmlBtn = document.getElementById('btn-export-html');
-
-  if (jsonBtn) {
-    jsonBtn.addEventListener('click', () => {
-      const target = document.getElementById('input-username').value ||
-        document.getElementById('input-name').value ||
-        (currentFindings[0] && currentFindings[0].username) || 'Target';
-      Exporter.exportJSON(target, currentFindings, currentEmailInfo, currentPhoneInfo, currentBriefingData);
-    });
-  }
-
-  if (htmlBtn) {
-    htmlBtn.addEventListener('click', () => {
-      const target = document.getElementById('input-username').value ||
-        document.getElementById('input-name').value ||
-        (currentFindings[0] && currentFindings[0].username) || 'Target';
-      Exporter.exportHTML(target, currentFindings, currentBriefingData);
-    });
-  }
-}
-
-async function loadDossierToView(dossierId) {
-  try {
-    const resp = await fetch(`/api/dossiers/${dossierId}`);
-    const dossier = await resp.json();
-    if (dossier.error) {
-      alert(`Dossier load failed: ${dossier.error}`);
-      return;
-    }
-
-    currentFindings = (dossier.results || [])
-      .filter(r => r.found)
-      .map(r => {
-        let meta = {};
-        try { meta = JSON.parse(r.evidence || '{}'); } catch (e) {}
-        if (r.display_name) meta.display_name = r.display_name;
-        if (r.bio) meta.bio = r.bio;
-        if (r.avatar_url) meta.avatar_url = r.avatar_url;
-        if (r.avatar_hash) meta.avatar_hash = r.avatar_hash;
-        return {
-          site: r.site,
-          category: r.category,
-          username: r.username,
-          profile_url: r.profile_url,
-          found: r.found,
-          is_seed: r.is_seed,
-          status_code: r.status_code,
-          latency_ms: r.latency_ms,
-          corroboration: r.corroboration || { score: 50, verdict: 'VERIFIED' },
-          metadata: meta
-        };
-      });
-
-    currentEmailInfo = null;
-    currentPhoneInfo = null;
-    currentBriefingData = dossier.metadata || null;
-
-    const briefingCard = document.getElementById('ai-briefing-card');
-    const briefingText = document.getElementById('briefing-text');
-    const confBadge = document.getElementById('briefing-confidence-badge');
-    if (briefingCard && briefingText && dossier.ai_briefing) {
-      briefingText.innerText = dossier.ai_briefing;
-      if (confBadge && dossier.confidence !== undefined) {
-        confBadge.innerText = `${dossier.confidence}% CONFIDENCE`;
-      }
-      briefingCard.style.display = 'block';
-    }
-
-    // Switch to the recon view
-    document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.view-section').forEach(s => s.style.display = 'none');
-    const reconView = document.getElementById('view-recon');
-    if (reconView) reconView.style.display = 'block';
-    const reconTab = document.querySelector('.nav-tab-btn[data-target="view-recon"]');
-    if (reconTab) reconTab.classList.add('active');
-
-    const findingsCount = document.getElementById('findings-count');
-    if (findingsCount) findingsCount.innerText = `${currentFindings.length} Discovered`;
-    const resetBtn = document.getElementById('btn-reset-results');
-    if (resetBtn) resetBtn.style.display = 'inline-flex';
-
-    updateSubFilterBar();
-    updateGraphSubFilterBar();
-    renderFindingsGrid();
-    if (graphVisualizer) {
-      graphVisualizer.buildFromScan(dossier.target_name, currentFindings, currentEmailInfo, currentPhoneInfo);
-    }
-  } catch (e) {
-    alert(`Failed to load dossier: ${e.message}`);
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--accent-red);">FAILED TO LOAD HISTORY</td></tr>';
   }
 }

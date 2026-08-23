@@ -6,15 +6,29 @@ from typing import Dict, Any, List, Optional
 from app.config import REQUEST_TIMEOUT, HTTP_VERIFY
 from app.database import repository as repo
 
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
 DEFAULT_LOCAL_MODEL = "llama3.2"
 DEFAULT_LOCAL_HOST = "http://127.0.0.1:11434"
 
+MODEL_PRETTY_NAMES = {
+    "openai/gpt-oss-20b": "GPT-OSS 20B (Recommended · High Limit & Ultra-Fast)",
+    "groq/compound-mini": "Groq Compound Mini (Fast & Generous Limits)",
+    "openai/gpt-oss-120b": "GPT-OSS 120B (High Intelligence Flagship)",
+    "qwen/qwen3.6-27b": "Qwen 3.6 27B (Reasoning Preview)",
+    "allam-2-7b": "Allam 2 7B",
+    "canopylabs/orpheus-v1-english": "Orpheus v1 English",
+    "llama-3.3-70b-versatile": "Llama 3.3 70B Versatile",
+    "llama-3.1-8b-instant": "Llama 3.1 8B Instant"
+}
+
 GROQ_FALLBACK_MODELS = [
-    {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B Versatile (Recommended - High Accuracy)"},
-    {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B Instant (Ultra-Fast)"},
-    {"id": "mixtral-8x7b-32768", "name": "Mixtral 8x7B (High Context)"},
-    {"id": "gemma2-9b-it", "name": "Gemma 2 9B IT"}
+    {"id": "openai/gpt-oss-20b", "name": "GPT-OSS 20B (Recommended · High Limit & Ultra-Fast)"},
+    {"id": "groq/compound-mini", "name": "Groq Compound Mini (Fast & Generous Limits)"},
+    {"id": "openai/gpt-oss-120b", "name": "GPT-OSS 120B (High Intelligence Flagship)"},
+    {"id": "qwen/qwen3.6-27b", "name": "Qwen 3.6 27B (Reasoning Preview)"},
+    {"id": "allam-2-7b", "name": "Allam 2 7B"},
+    {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B Versatile"},
+    {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B Instant"}
 ]
 
 LOCAL_FALLBACK_MODELS = [
@@ -23,14 +37,11 @@ LOCAL_FALLBACK_MODELS = [
     {"id": "mistral", "name": "Mistral 7B (Fallback)"}
 ]
 
-SYSTEM_PROMPT = """You are an expert OSINT analyst. Produce concise, objective executive briefings and precise machine-readable metadata. Never reveal internal chain-of-thought. Follow format rules exactly.
+SYSTEM_PROMPT = """You are an OSINT Intelligence Analyst. Produce a concise, 2-3 sentence executive intelligence briefing summarizing discovered accounts, verified identities, and key takeaways.
+Output ONLY a single valid JSON object. Do NOT include markdown code fences (no ```json), chain-of-thought, thinking tags (<think>), or introductory text.
 
-Instructions:
-Output exactly two items: (A) a plain-text executive briefing of 2–3 sentences (no markdown, no bullets), and (B) a JSON object on a separate line (no code fences) matching the schema below. Do NOT include any explanatory text beyond these two items.
-The briefing must be objective, concise, and highlight verified identities.
-
-JSON schema:
-{"briefing":string,"confidence":int (0-100),"verified_identities":string[],"inferred_identity":string,"evidence":[{"site":string,"username":string,"url":string}],"rationale":string}
+JSON format:
+{"briefing":"2-3 clear, objective sentences summarizing the verified findings and digital footprint.","confidence":85,"verified_identities":["username"],"inferred_identity":"Target Identifier","evidence":[{"site":"GitHub","username":"user","url":"https://..."}],"rationale":"1 sentence summarizing verification basis."}
 """
 
 def resolve_api_key(key: str) -> str:
@@ -57,12 +68,21 @@ class AIEngine:
                             mid = m.get("id", "")
                             mid_l = mid.lower()
                             # Filter out non-chat models (guard, whisper, vision-only, etc.)
-                            if any(bad in mid_l for bad in ["guard", "whisper", "vision", "moderation"]):
+                            if any(bad in mid_l for bad in ["guard", "whisper", "vision", "moderation", "safeguard"]):
                                 continue
-                            if any(k in mid_l for k in ["llama", "mixtral", "gemma", "qwen", "deepseek"]):
-                                models.append({"id": mid, "name": mid})
+                            if any(k in mid_l for k in ["gpt-oss", "compound", "llama", "qwen", "mixtral", "gemma", "allam", "orpheus"]):
+                                name = MODEL_PRETTY_NAMES.get(mid, mid)
+                                models.append({"id": mid, "name": name})
                         if models:
-                            return sorted(models, key=lambda x: ("llama-3.3" not in x["id"] and "llama-3.1" not in x["id"], x["id"]))
+                            # Prioritize gpt-oss-20b and compound-mini at the top
+                            def _sort_key(x):
+                                mid = x["id"]
+                                if "gpt-oss-20b" in mid: return 0
+                                if "compound-mini" in mid: return 1
+                                if "gpt-oss-120b" in mid: return 2
+                                if "llama" in mid: return 3
+                                return 4
+                            return sorted(models, key=_sort_key)
             except Exception:
                 pass
             return GROQ_FALLBACK_MODELS
@@ -153,7 +173,7 @@ Phone findings: {json.dumps(phone_info) if phone_info else 'None'}
 
         if provider == "groq" and api_key:
             try:
-                async with httpx.AsyncClient(timeout=10.0, verify=HTTP_VERIFY) as client:
+                async with httpx.AsyncClient(timeout=15.0, verify=HTTP_VERIFY) as client:
                     payload = {
                         "model": model,
                         "messages": [
@@ -161,7 +181,7 @@ Phone findings: {json.dumps(phone_info) if phone_info else 'None'}
                             {"role": "user", "content": user_content}
                         ],
                         "temperature": 0.1,
-                        "max_tokens": 600
+                        "max_tokens": 1500
                     }
                     resp = await client.post(
                         "https://api.groq.com/openai/v1/chat/completions",
@@ -178,12 +198,12 @@ Phone findings: {json.dumps(phone_info) if phone_info else 'None'}
 
         elif provider == "local":
             try:
-                async with httpx.AsyncClient(timeout=12.0, verify=HTTP_VERIFY) as client:
+                async with httpx.AsyncClient(timeout=15.0, verify=HTTP_VERIFY) as client:
                     payload = {
                         "model": model or DEFAULT_LOCAL_MODEL,
                         "prompt": f"{SYSTEM_PROMPT}\n\n{user_content}",
                         "stream": False,
-                        "options": {"temperature": 0.1}
+                        "options": {"temperature": 0.1, "num_predict": 1500}
                     }
                     resp = await client.post(f"{host.rstrip('/')}/api/generate", json=payload)
                     if resp.status_code == 200:
@@ -199,29 +219,55 @@ Phone findings: {json.dumps(phone_info) if phone_info else 'None'}
     @staticmethod
     def _parse_ai_output(raw_text: str) -> Optional[Dict[str, Any]]:
         clean_text = raw_text.strip()
-        lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
 
-        json_match = re.search(r'(\{[\s\S]*\})', clean_text)
-        if json_match:
+        # Method 1: Standard JSON parsing from all candidate blocks in raw text
+        candidates = re.findall(r'(\{(?:[^{}]|(?:\{[^{}]*\}))*\})', clean_text, flags=re.S)
+        for c in reversed(candidates):
             try:
-                data = json.loads(json_match.group(1))
+                data = json.loads(c)
                 if isinstance(data, dict) and "briefing" in data:
-                    return data
+                    b = str(data["briefing"]).strip()
+                    # Strip any residual thinking tags or meta headers
+                    b = re.sub(r'<think>[\s\S]*?</think>', '', b, flags=re.I)
+                    b = re.sub(r'<think>[\s\S]*', '', b, flags=re.I)
+                    b = re.sub(r'^(?:Briefing|Summary|Analysis):\s*', '', b, flags=re.I).strip()
+                    if len(b) > 15 and not b.startswith(("1.", "2.", "Output", "Schema", "2-3")):
+                        data["briefing"] = b
+                        return data
             except Exception:
                 pass
 
-        briefing_lines = []
-        for line in lines:
-            if not line.startswith('{') and not line.startswith('```') and not line.startswith('JSON'):
-                briefing_lines.append(line)
+        # Method 2: Robust regex extraction of "briefing" field from reasoning stream
+        m_b = re.findall(r'"briefing"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', clean_text)
+        if m_b:
+            final_b = m_b[-1].replace('\\"', '"').replace('\\n', ' ').strip()
+            if len(final_b) > 20 and not final_b.startswith(("2-3", "Output", "Schema")):
+                m_conf = re.findall(r'"confidence"\s*:\s*(\d+)', clean_text)
+                conf = int(m_conf[-1]) if m_conf else 75
+                m_rat = re.findall(r'"rationale"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', clean_text)
+                rat = m_rat[-1].replace('\\"', '"').strip() if m_rat else "Intelligence synthesis."
+                return {
+                    "briefing": final_b,
+                    "confidence": conf,
+                    "verified_identities": [],
+                    "inferred_identity": "Inferred Target Profile",
+                    "evidence": [],
+                    "rationale": rat
+                }
 
-        briefing_text = " ".join(briefing_lines) if briefing_lines else clean_text
-        if len(briefing_text) > 20:
+        # Method 3: Clean text fallback with all thinking tokens stripped
+        stripped = re.sub(r'<think>[\s\S]*?</think>', '', clean_text, flags=re.I)
+        stripped = re.sub(r'<think>[\s\S]*', '', stripped, flags=re.I).strip()
+        stripped = re.sub(r'```(?:json)?[\s\S]*?```', '', stripped, flags=re.I).strip()
+        stripped = re.sub(r'[\*\#\_`]', '', stripped).strip()
+        stripped = re.sub(r'^(?:Here\'s a thinking process|Analysis|Reasoning|Output|Draft Briefing):\s*', '', stripped, flags=re.I).strip()
+
+        if len(stripped) > 15:
             return {
-                "briefing": briefing_text,
+                "briefing": stripped,
                 "confidence": 75,
                 "verified_identities": [],
-                "inferred_identity": "Inferred target profile",
+                "inferred_identity": "Inferred Target Profile",
                 "evidence": [],
                 "rationale": "Automated reasoning synthesis."
             }

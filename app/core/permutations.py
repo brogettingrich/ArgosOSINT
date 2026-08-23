@@ -71,6 +71,55 @@ def generate_name_permutations(name: str, country_code: str = "") -> List[str]:
 
     return list(dict.fromkeys(variants))
 
+def _digit_collision_variants(seed: str) -> List[str]:
+    """Generate digit-collision variants of a seed handle.
+
+    Techniques:
+    1. For seeds ending in digits: zero-padding (user7 -> user07, user007),
+       removing leading zeros (user07 -> user7), digit block reversal (user12 -> user21),
+       adjacent number offsets (user1 -> user2), and 2-digit <-> 4-digit year expansion (user24 <-> user2024).
+    2. For seeds without digits: standard numeric collision anchors (user1, user01, user123).
+    """
+    variants = []
+    m = re.search(r'(\d+)$', seed)
+    if m:
+        num = m.group(1)
+        base = seed[:m.start()]
+        # Zero padding
+        for extra in (1, 2):
+            variants.append(f"{base}{'0' * extra}{num}")
+        # Strip leading zeros
+        if num.startswith('0') and num.strip('0'):
+            variants.append(f"{base}{num.lstrip('0')}")
+        # Reverse digit block
+        if len(num) > 1 and num != num[::-1]:
+            variants.append(f"{base}{num[::-1]}")
+        # 2-digit to 4-digit year expansion
+        if len(num) == 2:
+            val = int(num)
+            if val <= 30:
+                variants.append(f"{base}20{num}")
+            elif val >= 50:
+                variants.append(f"{base}19{num}")
+        elif len(num) == 4 and (num.startswith('19') or num.startswith('20')):
+            variants.append(f"{base}{num[2:]}")
+        # Adjacent offset
+        try:
+            val = int(num)
+            if 0 <= val <= 99:
+                variants.append(f"{base}{val + 1}")
+                if val > 0:
+                    variants.append(f"{base}{val - 1}")
+        except ValueError:
+            pass
+    else:
+        for sfx in ["1", "01", "123", "0", "2"]:
+            variants.append(f"{seed}{sfx}")
+            variants.append(f"{seed}_{sfx}")
+
+    return list(dict.fromkeys(variants))
+
+
 def generate_permutations(
     seed_username: str,
     known_names: List[str] = None,
@@ -121,6 +170,19 @@ def generate_permutations(
                         "category": "Country Context",
                         "rule": f"Appended country suffix '_{country_code}'",
                         "similarity": 90,
+                        "is_seed": False
+                    })
+
+        # Digit-collision variants (zero-padding / digit reversal on numeric suffixes)
+        if enable_digit_collisions:
+            for dc in _digit_collision_variants(clean_seed):
+                if dc not in seen:
+                    seen.add(dc)
+                    results.append({
+                        "username": dc,
+                        "category": "Digit Collision",
+                        "rule": "Digit collision variant",
+                        "similarity": 85,
                         "is_seed": False
                     })
 

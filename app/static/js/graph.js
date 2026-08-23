@@ -185,13 +185,26 @@ class IntelligenceGraph {
           data: f
         };
         this.nodes.push(node);
-        this.links.push({
-          source: rootNode,
-          target: node,
-          label: f.is_seed ? 'Exact Match' : 'Permutation',
-          color: f.is_seed ? '#10b981' : '#2a364e',
-          width: f.is_seed ? 2 : 1
-        });
+
+        if (f.is_email_pivot && emailNode) {
+          node.color = '#06b6d4';
+          node.strokeColor = '#06b6d4';
+          this.links.push({
+            source: emailNode,
+            target: node,
+            label: 'Email Registered',
+            color: '#06b6d4',
+            width: 2
+          });
+        } else {
+          this.links.push({
+            source: rootNode,
+            target: node,
+            label: f.is_seed ? 'Exact Match' : 'Permutation',
+            color: f.is_seed ? '#10b981' : '#2a364e',
+            width: f.is_seed ? 2 : 1
+          });
+        }
 
         // Group by avatar hash for cross-platform visual links
         if (node.avatar_hash) {
@@ -226,6 +239,8 @@ class IntelligenceGraph {
       case 'Developer': return '#10b981';
       case 'Gaming': return '#8b5cf6';
       case 'Media': return '#ec4899';
+      case 'Email Pivot': return '#06b6d4';
+      case 'Identity': return '#06b6d4';
       case 'Crypto': return '#f59e0b';
       default: return '#94a3b8';
     }
@@ -341,16 +356,16 @@ class IntelligenceGraph {
       ctx.strokeStyle = n.strokeColor || '#ffffff';
       ctx.stroke();
 
-      // Label text
-      ctx.font = n.isRoot ? 'bold 13px Inter, sans-serif' : '11px Inter, sans-serif';
-      ctx.fillStyle = '#f4f4f5';
+      // Label text (Crisp Monospace Engineering Typography)
+      ctx.font = n.isRoot ? 'bold 11px JetBrains Mono, monospace' : '10px JetBrains Mono, monospace';
+      ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillText(n.label, n.x, n.y + n.radius + 5);
 
       if (n.subLabel) {
         ctx.font = '9px JetBrains Mono, monospace';
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = '#a1a1aa';
         ctx.fillText(n.subLabel, n.x, n.y + n.radius + 18);
       }
     });
