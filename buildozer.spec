@@ -11,7 +11,7 @@ version = 1.0
 requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer
 
 # Android specific
-android.permissions = INTERNET,ACCESS_NETWORK_STATE
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,WAKE_LOCK
 android.api = 33
 android.minapi = 21
 android.ndk = 25b

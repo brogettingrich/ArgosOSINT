@@ -36,13 +36,23 @@ COMMON_MAIL_PROVIDERS = {
 def resolve_mx_provider(domain: str):
     """Return (mx_provider, deliverable) for a domain.
 
-    Uses dnspython when available (true DNS MX lookup); otherwise falls back to
-    a known-provider heuristic. `deliverable` is True/False when a real answer
-    exists and None when it is genuinely unknown.
+    Uses dnspython when available (true DNS MX lookup), with explicit public
+    resolvers (Cloudflare 1.1.1.1 + Google 8.8.8.8) so it works correctly on
+    Android where /etc/resolv.conf does not exist. Falls back to a
+    known-provider heuristic when DNS is unavailable or times out.
+    `deliverable` is True/False when a real answer exists, None when unknown.
     """
     try:
         import dns.resolver
-        answers = dns.resolver.resolve(domain, "MX", lifetime=3)
+
+        # Build a resolver with public nameservers so this works on Android
+        # (which has no /etc/resolv.conf) and on devices behind captive portals.
+        resolver = dns.resolver.Resolver(configure=False)
+        resolver.nameservers = ['1.1.1.1', '8.8.8.8', '8.8.4.4']
+        resolver.lifetime = 5.0
+        resolver.timeout  = 3.0
+
+        answers = resolver.resolve(domain, "MX")
         mxs = sorted(answers, key=lambda r: r.preference)
         if mxs:
             host = str(mxs[0].exchange).rstrip(".")

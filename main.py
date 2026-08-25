@@ -2,6 +2,16 @@
 ArgosOSINT Android Entry Point
 Starts pure Starlette/uvicorn backend in a background daemon thread,
 and attaches a fullscreen Android WebView to PythonActivity on startup.
+
+Behaviour:
+  • Internal traffic (127.0.0.1:8500) loads inside the WebView as normal.
+  • Every external URL (instagram.com, x.com, tiktok.com, …) is fired as
+    an Android Intent so the native app or Chrome opens it separately —
+    the ArgosOSINT WebView and all scan progress are left untouched.
+  • Hardware Back button navigates the WebView history; only exits the
+    app when there is no history left.
+  • A PARTIAL_WAKE_LOCK is acquired during long OSINT scans to prevent
+    Android from sleeping and dropping the SSE stream.
 """
 
 import threading
@@ -21,7 +31,7 @@ if sys.platform == 'android' or 'ANDROID_ROOT' in os.environ:
         print(f'[ArgosOSINT] App storage init: {e}')
 
 SERVER_PORT = 8500
-SERVER_URL = f'http://127.0.0.1:{SERVER_PORT}'
+SERVER_URL  = f'http://127.0.0.1:{SERVER_PORT}'
 
 # ── 2. Start Uvicorn / Starlette in background thread ───────────
 _server_state = {'error': None}
@@ -36,25 +46,21 @@ def _run_server():
             host='127.0.0.1',
             port=SERVER_PORT,
             log_level='warning',
-            access_log=False
+            access_log=False,
         )
         server = uvicorn.Server(config)
-        # Disable signal handlers in background thread
         server.install_signal_handlers = lambda: None
         server.run()
     except Exception as e:
         import traceback
-        err_msg = f'[ArgosOSINT] Server start error: {e}\n{traceback.format_exc()}'
-        print(err_msg)
+        print(f'[ArgosOSINT] Server start error: {e}\n{traceback.format_exc()}')
         _server_state['error'] = str(e)
 
 server_thread = threading.Thread(target=_run_server, daemon=True)
 server_thread.start()
 
+
 def _wait_for_server(timeout=10.0, interval=0.2):
-    """Poll 127.0.0.1:SERVER_PORT until it accepts connections, the backend
-    thread reports a startup error, or timeout elapses. Avoids loading the
-    WebView before uvicorn has actually opened its socket on a cold start."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         if _server_state['error']:
@@ -66,18 +72,17 @@ def _wait_for_server(timeout=10.0, interval=0.2):
             time.sleep(interval)
     return False
 
+
 # ── 3. Kivy shell + status UI ────────────────────────────────────
-from kivy.app import App                          # type: ignore
-from kivy.clock import Clock                     # type: ignore
-from kivy.uix.floatlayout import FloatLayout     # type: ignore
-from kivy.uix.label import Label                 # type: ignore
-from kivy.graphics import Color, Rectangle       # type: ignore
+from kivy.app    import App                       # type: ignore
+from kivy.clock  import Clock                     # type: ignore
+from kivy.uix.floatlayout import FloatLayout      # type: ignore
+from kivy.uix.label       import Label            # type: ignore
+from kivy.graphics         import Color, Rectangle # type: ignore
 
 
 class StatusScreen(FloatLayout):
-    """Branded placeholder shown while the backend/WebView come up. Replaces
-    the old bare black Widget(); if WebView attach ever fails, this stays on
-    screen with an error message instead of leaving a silent black screen."""
+    """Branded splash shown while the backend/WebView come up."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -106,34 +111,73 @@ class StatusScreen(FloatLayout):
         self.add_widget(self.status_label)
 
     def _sync_bg(self, *_):
-        self._bg.pos = self.pos
+        self._bg.pos  = self.pos
         self._bg.size = self.size
 
     def set_status(self, text, is_error=False):
-        self.status_label.text = text
+        self.status_label.text  = text
         self.status_label.color = (0.85, 0.4, 0.4, 1) if is_error else (0.55, 0.55, 0.63, 1)
+
+
+# ── Global WebView reference (needed for back-button navigation) ──
+_webview = None
 
 
 def attach_webview(on_done):
     """Build the native Android WebView and attach it to the Activity.
+
     Must run on Android's actual UI/Looper thread (see run_on_ui_thread
-    usage in ArgosApp._begin_attach) -- constructing WebView anywhere else
-    throws, because it needs a Looper that only the UI thread has."""
+    usage in ArgosApp._begin_attach).
+
+    External-link routing
+    ─────────────────────
+    We install a custom WebViewClient whose shouldOverrideUrlLoading
+    fires an ACTION_VIEW Intent for every URL that is NOT our own local
+    server.  This means:
+      • instagram.com  → opens Instagram app (or Chrome)
+      • x.com / tiktok.com / any HTTPS URL → opens Chrome / default browser
+      • http://127.0.0.1:8500/* → loads normally inside the WebView
+    The user's scan progress is NEVER interrupted by an external link.
+    """
+    global _webview
     try:
-        from jnius import autoclass              # type: ignore
+        from jnius import autoclass, PythonJavaClass, java_method  # type: ignore
 
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        activity = PythonActivity.mActivity
+        activity       = autoclass('org.kivy.android.PythonActivity').mActivity
 
-        # Lock orientation to portrait (1 = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+        # Lock to portrait
         try:
             activity.setRequestedOrientation(1)
         except Exception:
             pass
 
-        WebView = autoclass('android.webkit.WebView')
-        WebViewClient = autoclass('android.webkit.WebViewClient')
+        # Java classes we need
+        WebView       = autoclass('android.webkit.WebView')
+        Intent        = autoclass('android.content.Intent')
+        Uri           = autoclass('android.net.Uri')
+        Build         = autoclass('android.os.Build')
 
+        # ── Custom WebViewClient: route external URLs via Intent ──
+        class ExternalLinkClient(PythonJavaClass):
+            __javainterfaces__ = ['android/webkit/WebViewClient']
+            __javacontext__    = 'app'
+
+            @java_method('(Landroid/webkit/WebView;Ljava/lang/String;)Z')
+            def shouldOverrideUrlLoading(self, view, url):
+                # Keep local backend traffic inside the WebView
+                if url and url.startswith(SERVER_URL):
+                    return False  # let WebView handle it
+                # Everything else → fire an Intent
+                try:
+                    intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    activity.startActivity(intent)
+                except Exception as ex:
+                    print(f'[ArgosOSINT] Intent launch failed: {ex}')
+                return True  # we handled it; WebView stays put
+
+        # ── Build and configure the WebView ──
         wv = WebView(activity)
         settings = wv.getSettings()
         settings.setJavaScriptEnabled(True)
@@ -143,25 +187,55 @@ def attach_webview(on_done):
         settings.setUseWideViewPort(True)
         settings.setLoadWithOverviewMode(True)
 
-        wv.setWebViewClient(WebViewClient())
+        client = ExternalLinkClient()
+        wv.setWebViewClient(client)
         wv.loadUrl(SERVER_URL)
         activity.setContentView(wv)
+
+        _webview = wv  # store for back-button handler
+
+        # ── WakeLock: prevent CPU sleep during long scans ──
+        try:
+            Context      = autoclass('android.content.Context')
+            PowerManager = autoclass('android.os.PowerManager')
+            pm = activity.getSystemService(Context.POWER_SERVICE)
+            # PARTIAL_WAKE_LOCK = 1 keeps CPU awake; screen can still dim
+            wl = pm.newWakeLock(1, 'ArgosOSINT:ScanWakeLock')
+            wl.acquire()
+            print('[ArgosOSINT] WakeLock acquired')
+        except Exception as wl_err:
+            print(f'[ArgosOSINT] WakeLock unavailable: {wl_err}')
+
         print('[ArgosOSINT] Native WebView successfully attached to Activity!')
         Clock.schedule_once(lambda dt: on_done(None), 0)
+
     except Exception as e:
         import traceback
         print(f'[ArgosOSINT] WebView attach error: {e}\n{traceback.format_exc()}')
         Clock.schedule_once(lambda dt, err=str(e): on_done(err), 0)
 
 
+# ── 4. Kivy App class ────────────────────────────────────────────
 class ArgosApp(App):
     def build(self):
         self.status_screen = StatusScreen()
         return self.status_screen
 
+    # ── Back button: navigate WebView history instead of exiting ──
+    def on_keyboard(self, window, key, scancode, codepoint, modifier):
+        KEYCODE_BACK = 27          # Kivy maps Android back → ESC (27)
+        if key == KEYCODE_BACK and _webview is not None:
+            try:
+                if _webview.canGoBack():
+                    _webview.goBack()
+                    return True    # consumed — don't exit
+            except Exception:
+                pass
+        return False               # let Kivy / Android handle it (exits app)
+
     def _on_attach_result(self, error):
         if error is None:
-            return  # activity.setContentView(wv) already replaced the visible surface
+            return
         self.status_screen.set_status(
             f'Could not load the app UI:\n{error}\n\n'
             f'Backend is still running at\n{SERVER_URL}',
@@ -188,6 +262,9 @@ class ArgosApp(App):
             self._on_attach_result(str(e))
 
     def on_start(self):
+        from kivy.core.window import Window  # type: ignore
+        Window.bind(on_keyboard=self.on_keyboard)
+
         self.status_screen.set_status('Starting backend server...')
 
         def _wait_then_attach():
