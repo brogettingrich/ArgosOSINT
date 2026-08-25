@@ -293,10 +293,24 @@ async def get_dossier_details_endpoint(request: Request):
         return JSONResponse({"error": "Dossier not found"}, status_code=404)
     return JSONResponse(details)
 
+async def open_external_url(request: Request):
+    """Receives an external URL from the in-app WebView JavaScript and queues
+    it for the Android native layer to open via ACTION_VIEW Intent.
+    On non-Android environments this is a harmless no-op."""
+    url = request.query_params.get("url", "").strip()
+    if url and (url.startswith("http://") or url.startswith("https://")):
+        try:
+            from app.android_bridge import pending_external_urls
+            pending_external_urls.put_nowait(url)
+        except Exception:
+            pass  # Non-Android environment — silently ignore
+    return JSONResponse({"status": "ok"})
+
 routes = [
     Route("/", endpoint=read_root, methods=["GET"]),
     Route("/api/permutations", endpoint=get_permutations_endpoint, methods=["POST"]),
     Route("/api/scan/stream", endpoint=scan_stream_endpoint, methods=["GET"]),
+    Route("/api/open-external", endpoint=open_external_url, methods=["GET"]),
     Route("/api/settings", endpoint=get_settings_endpoint, methods=["GET"]),
     Route("/api/settings", endpoint=save_settings_endpoint, methods=["POST"]),
     Route("/api/settings/health", endpoint=get_settings_health, methods=["GET"]),

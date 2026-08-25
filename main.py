@@ -3,15 +3,17 @@ ArgosOSINT Android Entry Point
 Starts pure Starlette/uvicorn backend in a background daemon thread,
 and attaches a fullscreen Android WebView to PythonActivity on startup.
 
-Behaviour:
-  • Internal traffic (127.0.0.1:8500) loads inside the WebView as normal.
-  • Every external URL (instagram.com, x.com, tiktok.com, …) is fired as
-    an Android Intent so the native app or Chrome opens it separately —
-    the ArgosOSINT WebView and all scan progress are left untouched.
-  • Hardware Back button navigates the WebView history; only exits the
-    app when there is no history left.
-  • A PARTIAL_WAKE_LOCK is acquired during long OSINT scans to prevent
-    Android from sleeping and dropping the SSE stream.
+External-link routing (no PyJNIUS proxy tricks):
+  • JS clicks "OPEN PROFILE" → fetch('/api/open-external?url=...')
+  • Starlette queues the URL in app.android_bridge.pending_external_urls
+  • _url_dispatcher() thread pops it → fires Android ACTION_VIEW Intent
+  • Instagram/Chrome/etc opens in a NEW task; WebView + scan untouched
+
+Back button:
+  • Navigates WebView history; exits only when no history remains.
+
+WakeLock:
+  • PARTIAL_WAKE_LOCK keeps the CPU alive during long SSE scan streams.
 """
 
 import threading
@@ -19,6 +21,7 @@ import time
 import os
 import sys
 import socket
+import queue
 
 # ── 1. Android App Storage Path Setup ─────────────────────────
 if sys.platform == 'android' or 'ANDROID_ROOT' in os.environ:
@@ -73,12 +76,46 @@ def _wait_for_server(timeout=10.0, interval=0.2):
     return False
 
 
-# ── 3. Kivy shell + status UI ────────────────────────────────────
-from kivy.app    import App                       # type: ignore
-from kivy.clock  import Clock                     # type: ignore
-from kivy.uix.floatlayout import FloatLayout      # type: ignore
-from kivy.uix.label       import Label            # type: ignore
-from kivy.graphics         import Color, Rectangle # type: ignore
+# ── 3. External URL dispatcher ───────────────────────────────────
+# Reads URLs queued by /api/open-external (via JS click intercept) and
+# fires Android ACTION_VIEW Intents.  Uses zero PyJNIUS proxy tricks —
+# startActivity() is a plain method call, safe from any thread when
+# FLAG_ACTIVITY_NEW_TASK is set.
+def _url_dispatcher():
+    try:
+        from jnius import autoclass  # type: ignore
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        Intent         = autoclass('android.content.Intent')
+        Uri            = autoclass('android.net.Uri')
+
+        from app.android_bridge import pending_external_urls
+
+        print('[ArgosOSINT] URL dispatcher ready')
+        while True:
+            try:
+                url = pending_external_urls.get(timeout=1.0)
+                try:
+                    activity = PythonActivity.mActivity
+                    intent   = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    activity.startActivity(intent)
+                    print(f'[ArgosOSINT] Opened externally: {url}')
+                except Exception as ex:
+                    print(f'[ArgosOSINT] Intent dispatch error: {ex}')
+            except queue.Empty:
+                continue
+    except Exception as e:
+        print(f'[ArgosOSINT] URL dispatcher init error: {e}')
+
+threading.Thread(target=_url_dispatcher, daemon=True).start()
+
+
+# ── 4. Kivy shell + status UI ────────────────────────────────────
+from kivy.app             import App           # type: ignore
+from kivy.clock           import Clock         # type: ignore
+from kivy.uix.floatlayout import FloatLayout  # type: ignore
+from kivy.uix.label       import Label         # type: ignore
+from kivy.graphics        import Color, Rectangle  # type: ignore
 
 
 class StatusScreen(FloatLayout):
@@ -125,26 +162,22 @@ _webview = None
 
 def attach_webview(on_done):
     """Build the native Android WebView and attach it to the Activity.
+    Must run on Android's actual UI/Looper thread (guaranteed by the
+    run_on_ui_thread decorator in ArgosApp._begin_attach).
 
-    Must run on Android's actual UI/Looper thread (see run_on_ui_thread
-    usage in ArgosApp._begin_attach).
-
-    External-link routing
-    ─────────────────────
-    We install a custom WebViewClient whose shouldOverrideUrlLoading
-    fires an ACTION_VIEW Intent for every URL that is NOT our own local
-    server.  This means:
-      • instagram.com  → opens Instagram app (or Chrome)
-      • x.com / tiktok.com / any HTTPS URL → opens Chrome / default browser
-      • http://127.0.0.1:8500/* → loads normally inside the WebView
-    The user's scan progress is NEVER interrupted by an external link.
+    External links are NOT handled here — they are intercepted by the
+    JavaScript click handler in app.js and routed through the
+    /api/open-external endpoint → _url_dispatcher() thread → Intent.
+    This completely avoids any need to subclass WebViewClient (which
+    PythonJavaClass cannot do because WebViewClient is a class, not an
+    interface, and Java's Proxy only supports interfaces).
     """
     global _webview
     try:
-        from jnius import autoclass, PythonJavaClass, java_method  # type: ignore
+        from jnius import autoclass  # type: ignore
 
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        activity       = autoclass('org.kivy.android.PythonActivity').mActivity
+        activity       = PythonActivity.mActivity
 
         # Lock to portrait
         try:
@@ -152,32 +185,9 @@ def attach_webview(on_done):
         except Exception:
             pass
 
-        # Java classes we need
         WebView       = autoclass('android.webkit.WebView')
-        Intent        = autoclass('android.content.Intent')
-        Uri           = autoclass('android.net.Uri')
-        Build         = autoclass('android.os.Build')
+        WebViewClient = autoclass('android.webkit.WebViewClient')
 
-        # ── Custom WebViewClient: route external URLs via Intent ──
-        class ExternalLinkClient(PythonJavaClass):
-            __javainterfaces__ = ['android/webkit/WebViewClient']
-            __javacontext__    = 'app'
-
-            @java_method('(Landroid/webkit/WebView;Ljava/lang/String;)Z')
-            def shouldOverrideUrlLoading(self, view, url):
-                # Keep local backend traffic inside the WebView
-                if url and url.startswith(SERVER_URL):
-                    return False  # let WebView handle it
-                # Everything else → fire an Intent
-                try:
-                    intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    activity.startActivity(intent)
-                except Exception as ex:
-                    print(f'[ArgosOSINT] Intent launch failed: {ex}')
-                return True  # we handled it; WebView stays put
-
-        # ── Build and configure the WebView ──
         wv = WebView(activity)
         settings = wv.getSettings()
         settings.setJavaScriptEnabled(True)
@@ -187,20 +197,19 @@ def attach_webview(on_done):
         settings.setUseWideViewPort(True)
         settings.setLoadWithOverviewMode(True)
 
-        client = ExternalLinkClient()
-        wv.setWebViewClient(client)
+        # Plain WebViewClient — keeps all navigation inside our WebView.
+        # External links are handled by JS + _url_dispatcher, not here.
+        wv.setWebViewClient(WebViewClient())
         wv.loadUrl(SERVER_URL)
         activity.setContentView(wv)
 
         _webview = wv  # store for back-button handler
 
-        # ── WakeLock: prevent CPU sleep during long scans ──
+        # ── WakeLock: keep CPU awake during long SSE scan streams ──
         try:
             Context      = autoclass('android.content.Context')
-            PowerManager = autoclass('android.os.PowerManager')
-            pm = activity.getSystemService(Context.POWER_SERVICE)
-            # PARTIAL_WAKE_LOCK = 1 keeps CPU awake; screen can still dim
-            wl = pm.newWakeLock(1, 'ArgosOSINT:ScanWakeLock')
+            pm           = activity.getSystemService(Context.POWER_SERVICE)
+            wl           = pm.newWakeLock(1, 'ArgosOSINT:ScanWakeLock')
             wl.acquire()
             print('[ArgosOSINT] WakeLock acquired')
         except Exception as wl_err:
@@ -215,7 +224,7 @@ def attach_webview(on_done):
         Clock.schedule_once(lambda dt, err=str(e): on_done(err), 0)
 
 
-# ── 4. Kivy App class ────────────────────────────────────────────
+# ── 5. Kivy App class ────────────────────────────────────────────
 class ArgosApp(App):
     def build(self):
         self.status_screen = StatusScreen()
@@ -223,7 +232,7 @@ class ArgosApp(App):
 
     # ── Back button: navigate WebView history instead of exiting ──
     def on_keyboard(self, window, key, scancode, codepoint, modifier):
-        KEYCODE_BACK = 27          # Kivy maps Android back → ESC (27)
+        KEYCODE_BACK = 27   # Kivy maps Android back → ESC (27)
         if key == KEYCODE_BACK and _webview is not None:
             try:
                 if _webview.canGoBack():
@@ -231,7 +240,7 @@ class ArgosApp(App):
                     return True    # consumed — don't exit
             except Exception:
                 pass
-        return False               # let Kivy / Android handle it (exits app)
+        return False           # let Kivy / Android handle it (exits app)
 
     def _on_attach_result(self, error):
         if error is None:
@@ -244,7 +253,9 @@ class ArgosApp(App):
 
     def _begin_attach(self, server_ok):
         if not server_ok:
-            self._on_attach_result(_server_state['error'] or 'Backend server did not start in time.')
+            self._on_attach_result(
+                _server_state['error'] or 'Backend server did not start in time.'
+            )
             return
 
         self.status_screen.set_status('Loading interface...')

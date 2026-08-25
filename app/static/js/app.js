@@ -36,7 +36,33 @@ document.addEventListener('DOMContentLoaded', () => {
   setupDismissControls();
   setupSettingsModal();
   initLiveHealthCheck();
+  setupExternalLinkIntercept();
 });
+
+/**
+ * Intercept all anchor clicks inside the WebView.
+ * External URLs (anything that is NOT our local 127.0.0.1 server) are
+ * sent to /api/open-external so the Android native layer can fire an
+ * ACTION_VIEW Intent, opening the link in Chrome / the native app while
+ * leaving ArgosOSINT and all scan progress completely untouched.
+ * On desktop browsers this is a transparent no-op (fetch returns fast).
+ */
+function setupExternalLinkIntercept() {
+  document.addEventListener('click', function(e) {
+    const anchor = e.target.closest('a[href]');
+    if (!anchor) return;
+    const href = anchor.href || '';
+    // Only intercept external http(s) URLs — leave in-page anchors alone
+    if ((href.startsWith('http://') || href.startsWith('https://')) &&
+        !href.startsWith('http://127.0.0.1') &&
+        !href.startsWith('http://localhost')) {
+      e.preventDefault();
+      e.stopPropagation();
+      fetch('/api/open-external?url=' + encodeURIComponent(href))
+        .catch(() => {});  // fire-and-forget; errors are silent
+    }
+  }, true /* capture phase — fires before any other handler */);
+}
 
 function setupNavigation() {
   // Unified handler for both desktop (.nav-tab-btn) and mobile (.bottom-nav-btn)
