@@ -460,6 +460,35 @@
   color: #ffffff;
 }
 
+/* "Find With Face" seed-photo picker */
+.btn-find-face {
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  padding: 6px 10px;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-find-face:hover {
+  border-color: var(--border-hover);
+}
+
+.face-seed-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.face-seed-preview img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 2px;
+  border: 1px solid var(--border-subtle);
+}
+
 /* Full-Window Graph Canvas */
 .graph-toolbar {
   display: flex;

@@ -35,9 +35,53 @@ document.addEventListener('DOMContentLoaded', () => {
   setupGraphControls();
   setupDismissControls();
   setupSettingsModal();
+  setupFaceSeedPicker();
   initLiveHealthCheck();
   setupExternalLinkIntercept();
 });
+
+/**
+ * "Find With Face" seed-photo picker -- Step 1 only: pick a photo, preview it.
+ * Nothing is uploaded or matched yet; that's wired in once the backend
+ * endpoint exists. The picked File is kept on window.faceSeedFile so a later
+ * step can send it without re-plumbing this part.
+ */
+function setupFaceSeedPicker() {
+  const btn = document.getElementById('btn-find-with-face');
+  const fileInput = document.getElementById('input-face-photo');
+  const preview = document.getElementById('face-seed-preview');
+  const thumb = document.getElementById('face-seed-thumb');
+  const filenameLabel = document.getElementById('face-seed-filename');
+  const clearBtn = document.getElementById('btn-clear-face-seed');
+  if (!btn || !fileInput) return;
+
+  btn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+
+    window.faceSeedFile = file;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      thumb.src = e.target.result;
+      filenameLabel.textContent = file.name;
+      preview.style.display = 'flex';
+      btn.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      window.faceSeedFile = null;
+      fileInput.value = '';
+      preview.style.display = 'none';
+      btn.style.display = '';
+    });
+  }
+}
 
 /**
  * Intercept all anchor clicks inside the WebView.

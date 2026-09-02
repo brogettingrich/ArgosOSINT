@@ -683,6 +683,45 @@
     min-height: 36px;
   }
 
+  /* "Find With Face" — same secondary-button treatment as #btn-test-ai */
+  .btn-find-face {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    color: #a1a1aa;
+    letter-spacing: 0;
+    text-transform: none;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-height: 44px;
+    width: 100%;
+    text-align: center;
+  }
+
+  .face-seed-preview {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+  }
+
+  .face-seed-preview img {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+  }
+
+  .face-seed-preview span {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
 
   /* ─── Bottom Navigation — 2 tabs ────────────────────────── */
 
