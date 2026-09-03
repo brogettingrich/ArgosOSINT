@@ -19,9 +19,14 @@ requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multi
 # Android specific
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,WAKE_LOCK
 android.api = 33
-android.minapi = 21
+# 24 (not 21) -- numpy's p4a recipe hard-requires ndk api/minapi >= 24 (real
+# error from the first Android build attempt after adding numpy/opencv/
+# tflite-runtime: "In order to build 'numpy', you must set minimum ndk api
+# (minapi) to 24."). API 24 = Android 7.0 (2016) -- effectively no real
+# device in use today is below this, so no practical compatibility loss.
+android.minapi = 24
 android.ndk = 25b
-android.ndk_api = 21
+android.ndk_api = 24
 android.archs = arm64-v8a
 android.allow_backup = True
 orientation = portrait
