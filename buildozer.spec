@@ -14,7 +14,14 @@ version = 1.0
 # attempt as a real debugging pass, not a guaranteed clean build (verified
 # recipes exist for all three, but tflite-runtime's is a niche one pinned to
 # an old TensorFlow 2.8.0, not a mainstream/heavily-traveled path).
-requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer,numpy,opencv,tflite-runtime
+# charset-normalizer pinned to 3.4.3 (not unpinned/latest 3.5.1): the third
+# real build failure was pip's cross-compile resolver reaching for a
+# nonexistent "cp314-cp314-android_24_arm64_v8a" wheel for 3.5.1 instead of
+# falling back to its real py3-none-any universal wheel -- unrelated to
+# anything added tonight (charset-normalizer was already an unpinned
+# dependency before). 3.4.3 also publishes a universal wheel and is an
+# established prior release, not a guess at a random older version.
+requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer==3.4.3,numpy,opencv,tflite-runtime
 
 # Local override of p4a's bundled numpy recipe -- see
 # p4a_local_recipes/numpy/__init__.py for why (a confirmed upstream numpy
