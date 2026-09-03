@@ -20,7 +20,7 @@ version = 1.0
 # the actual 3.4.3 pin now lives). Kivy itself hard-depends on it
 # (transitively, via Kivy's own 'requests' dependency) -- not something we
 # added or can remove.
-requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer,numpy,opencv,tflite-runtime
+requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer,requests,numpy,opencv,tflite-runtime
 
 # Local recipe overrides -- see each folder's __init__.py for the specific
 # real build failure it fixes and how that was confirmed, not guessed:
