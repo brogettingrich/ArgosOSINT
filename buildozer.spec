@@ -25,7 +25,15 @@ requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multi
 # Local recipe overrides -- see each folder's __init__.py for the specific
 # real build failure it fixes and how that was confirmed, not guessed:
 #   numpy/               unique.cpp missing #include <unordered_map>
-#   charset-normalizer/  version pin ineffective without a real recipe
+#   charset-normalizer/  version pin alone was ineffective (see below)
+#   requests/             the actual root cause: p4a's own recipe-dedup
+#                         filter has a hyphen/underscore bug, so
+#                         charset-normalizer kept getting silently
+#                         re-resolved (unconstrained -> broken 3.5.1
+#                         wheel) as a transitive dependency of requests
+#                         every time, regardless of its own recipe's pin.
+#                         Making requests a recipe too removes it from the
+#                         buggy joint-resolve path entirely.
 p4a.local_recipes = p4a_local_recipes
 
 # Android specific
