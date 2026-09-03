@@ -53,6 +53,7 @@ function setupFaceSeedPicker() {
   const thumb = document.getElementById('face-seed-thumb');
   const filenameLabel = document.getElementById('face-seed-filename');
   const clearBtn = document.getElementById('btn-clear-face-seed');
+  const statusLabel = document.getElementById('face-seed-status');
   if (!btn || !fileInput) return;
 
   btn.addEventListener('click', () => fileInput.click());
@@ -66,9 +67,10 @@ function setupFaceSeedPicker() {
     const reader = new FileReader();
     reader.onload = (e) => {
       thumb.src = e.target.result;
-      filenameLabel.textContent = file.name;
+      filenameLabel.textContent = 'Uploaded'; // never the real filename -- some run long enough to break the row layout
       preview.style.display = 'flex';
       btn.style.display = 'none';
+      uploadFaceSeed(file, statusLabel, thumb);
     };
     reader.readAsDataURL(file);
   });
@@ -79,7 +81,41 @@ function setupFaceSeedPicker() {
       fileInput.value = '';
       preview.style.display = 'none';
       btn.style.display = '';
+      if (statusLabel) { statusLabel.textContent = ''; statusLabel.className = 'face-seed-status'; }
     });
+  }
+}
+
+async function uploadFaceSeed(file, statusLabel, thumbEl) {
+  if (statusLabel) {
+    statusLabel.textContent = 'Checking photo…';
+    statusLabel.className = 'face-seed-status pending';
+  }
+  try {
+    const formData = new FormData();
+    formData.append('photo', file);
+    const res = await fetch('/api/face/seed', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (statusLabel) {
+      if (data.status === 'ok') {
+        // Swap to the actual aligned crop that got analyzed, not the raw
+        // upload -- shows exactly what the model saw, same reasoning Cleer's
+        // own UI uses for its face thumbnails.
+        if (thumbEl && data.analyzed_crop_jpeg_b64) {
+          thumbEl.src = 'data:image/jpeg;base64,' + data.analyzed_crop_jpeg_b64;
+        }
+        statusLabel.textContent = '✓ Face detected';
+        statusLabel.className = 'face-seed-status ok';
+      } else {
+        statusLabel.textContent = data.message || 'Could not use this photo';
+        statusLabel.className = 'face-seed-status error';
+      }
+    }
+  } catch (e) {
+    if (statusLabel) {
+      statusLabel.textContent = 'Upload failed — check connection';
+      statusLabel.className = 'face-seed-status error';
+    }
   }
 }
 
@@ -640,6 +676,18 @@ function setupFormSubmit() {
 }
 
 function startReconScan() {
+  // The backend consumes whatever seed photo is staged into THIS scan's new
+  // dossier the moment it starts (see _consume_pending_face_seed in main.py)
+  // -- reset the picker UI here to match, so it can't misleadingly look
+  // like the same photo is still staged for a future, unrelated scan.
+  const faceBtn = document.getElementById('btn-find-with-face');
+  const facePreview = document.getElementById('face-seed-preview');
+  if (window.faceSeedFile && faceBtn && facePreview) {
+    window.faceSeedFile = null;
+    facePreview.style.display = 'none';
+    faceBtn.style.display = '';
+  }
+
   const username = document.getElementById('input-username').value.trim();
   const known_names = document.getElementById('input-name').value.trim();
   const location = document.getElementById('input-location') ? document.getElementById('input-location').value.trim() : '';
@@ -879,6 +927,10 @@ function renderFindingsGrid() {
     if (activeCategoryFilter === 'exact') return item.is_seed && !item.is_email_pivot;
     if (activeCategoryFilter === 'email_pivot') return item.is_email_pivot;
     if (activeCategoryFilter === 'permutation') return !item.is_seed;
+    if (activeCategoryFilter === 'faces') {
+      const factors = (item.corroboration && item.corroboration.factors) || [];
+      return factors.some(f => f.startsWith('Face match'));
+    }
     return item.category === activeCategoryFilter;
   });
 
@@ -952,6 +1004,15 @@ function addFindingCard(item, hashMatches = {}) {
     }
   }
 
+  let factorsHtml = '';
+  if (corrob.factors && corrob.factors.length > 0 && !item.is_seed && !item.is_email_pivot) {
+    factorsHtml = `
+      <div class="corrob-factors-row">
+        ${corrob.factors.map(f => `<span class="corrob-factor-tag${f.startsWith('Face match') ? ' face-match' : ''}">${f}</span>`).join('')}
+      </div>
+    `;
+  }
+
   let metricsHtml = '';
   const metricItems = [];
   if (metrics.followers) metricItems.push(`<span class="metric-item">FOLL: <strong>${metrics.followers}</strong></span>`);
@@ -1007,6 +1068,7 @@ function addFindingCard(item, hashMatches = {}) {
       </div>
     </div>
 
+    ${factorsHtml}
     ${metricsHtml}
     ${bioHtml}
     ${pivotsHtml}

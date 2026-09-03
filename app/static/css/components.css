@@ -367,6 +367,31 @@
 }
 
 /* Raw Monospace Metrics Matrix */
+.corrob-factors-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+
+.corrob-factor-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  padding: 2px 6px;
+}
+
+/* The face-match factor, flagged from JS (see addFindingCard) -- give it
+   away as the one signal worth a second look, same idea as the exact-handle
+   indicator */
+.corrob-factor-tag.face-match {
+  color: var(--accent-cyan);
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
 .metrics-row {
   display: flex;
   gap: 8px;
@@ -479,6 +504,11 @@
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-secondary);
+  /* Defense in depth against ANY long text inside (filename is fixed to
+     "Uploaded" now, but error/status messages can still run long) -- wrap
+     instead of overflowing the card, same fix class as the filename bug. */
+  max-width: 100%;
+  flex-wrap: wrap;
 }
 
 .face-seed-preview img {
@@ -487,7 +517,28 @@
   object-fit: cover;
   border-radius: 2px;
   border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
+
+#face-seed-filename {
+  flex-shrink: 0;
+}
+
+.face-seed-status {
+  font-size: 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#btn-clear-face-seed {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.face-seed-status.pending { color: var(--text-muted); }
+.face-seed-status.ok { color: var(--accent-green); }
+.face-seed-status.error { color: var(--accent-red); }
 
 /* Full-Window Graph Canvas */
 .graph-toolbar {

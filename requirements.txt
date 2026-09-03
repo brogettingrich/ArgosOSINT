@@ -6,3 +6,11 @@ python-multipart>=0.0.6
 dnspython>=2.4.0
 phonenumbers>=9.0.0
 pytest>=8.0.0
+
+# "Find With Face" -- desktop/dev only. On Android this runs via the
+# tflite-runtime + opencv python-for-android recipes instead (added to
+# buildozer.spec separately, not yet done -- this feature only works in the
+# local browser preview right now, not on a real device build).
+opencv-python-headless>=4.10.0
+numpy>=1.26.0
+ai-edge-litert>=1.0.0; python_version >= "3.10"

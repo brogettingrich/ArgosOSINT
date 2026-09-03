@@ -285,7 +285,7 @@ Phone findings: {json.dumps(phone_info) if phone_info else 'None'}
             briefing += f"Verified exact matches on {', '.join(verified)}. "
         if location:
             briefing += f"Regional footprint aligned with {location}. "
-        briefing += "Corroboration corroborates active online presence."
+        briefing += "Findings corroborate an active online presence."
 
         return {
             "briefing": briefing,

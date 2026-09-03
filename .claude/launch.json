@@ -4,7 +4,7 @@
     {
       "name": "argos-web",
       "runtimeExecutable": "venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8501"],
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8501", "--reload"],
       "port": 8501
     }
   ]

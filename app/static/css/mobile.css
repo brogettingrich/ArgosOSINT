@@ -715,11 +715,24 @@
     border-radius: 6px;
   }
 
-  .face-seed-preview span {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  /* "Uploaded" is a fixed short word now (see app.js) -- give it its natural
+     width instead of competing for flexible space, which is what squeezed
+     it down to "U…" before this. */
+  #face-seed-filename {
+    flex: 0 0 auto;
     white-space: nowrap;
+  }
+
+  /* The genuinely variable-length one (confidence/sharpness, or an error
+     message) -- let it wrap onto its own line instead of either truncating
+     unreadably or overflowing the card, same class of bug as the filename
+     one this whole row exists to avoid repeating. */
+  #face-seed-status {
+    flex: 1 1 100%;
+    font-size: 11px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
   }
 
 

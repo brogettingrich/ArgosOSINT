@@ -7,20 +7,6 @@ from typing import Dict, Any, List, Optional
 from app.config import HTTP_VERIFY, REQUEST_TIMEOUT
 from app.core.http_client import create_async_client, get_request_headers, fetch_with_retry
 
-PUBLIC_BREACH_CATALOG = [
-    {"name": "Collection #1", "domain": "multiple", "year": 2019, "pwn_count": "772M", "data_classes": ["Emails", "Passwords"]},
-    {"name": "LinkedIn", "domain": "linkedin.com", "year": 2016, "pwn_count": "164M", "data_classes": ["Emails", "Passwords", "Job Titles"]},
-    {"name": "Adobe", "domain": "adobe.com", "year": 2013, "pwn_count": "153M", "data_classes": ["Emails", "Passwords", "Usernames", "Password Hints"]},
-    {"name": "Canva", "domain": "canva.com", "year": 2019, "pwn_count": "137M", "data_classes": ["Emails", "Names", "Usernames", "Passwords", "Cities"]},
-    {"name": "MySpace", "domain": "myspace.com", "year": 2016, "pwn_count": "360M", "data_classes": ["Emails", "Passwords", "Usernames"]},
-    {"name": "Zynga", "domain": "zynga.com", "year": 2019, "pwn_count": "173M", "data_classes": ["Emails", "Usernames", "Passwords", "Phone Numbers"]},
-    {"name": "Evite", "domain": "evite.com", "year": 2019, "pwn_count": "100M", "data_classes": ["Emails", "Names", "Passwords", "Phone Numbers", "Dates of Birth"]},
-    {"name": "Gravatar", "domain": "gravatar.com", "year": 2020, "pwn_count": "167M", "data_classes": ["Emails", "Usernames", "Names", "Avatar Hashes"]},
-    {"name": "Dropbox", "domain": "dropbox.com", "year": 2012, "pwn_count": "68M", "data_classes": ["Emails", "Passwords"]},
-    {"name": "Wattpad", "domain": "wattpad.com", "year": 2020, "pwn_count": "270M", "data_classes": ["Emails", "Usernames", "Passwords", "Dates of Birth", "IP Addresses"]},
-    {"name": "Twitter / X (Scraped)", "domain": "twitter.com", "year": 2023, "pwn_count": "200M", "data_classes": ["Emails", "Usernames", "Names", "Creation Dates"]}
-]
-
 class EmailPivotEngine:
 
     @staticmethod
@@ -181,27 +167,6 @@ class EmailPivotEngine:
             return None
 
     @staticmethod
-    async def probe_google(email: str) -> Optional[Dict[str, Any]]:
-        clean_email = email.strip().lower()
-        domain = clean_email.split("@")[-1]
-        
-        is_gmail = domain in ["gmail.com", "googlemail.com"]
-        if is_gmail:
-            h = EmailPivotEngine.calculate_gravatar_hash(email)
-            return {
-                "service": "Google",
-                "category": "Identity",
-                "registered": True,
-                "username": clean_email.split("@")[0],
-                "display_name": f"Google Account ({clean_email.split('@')[0]})",
-                "profile_url": f"mailto:{clean_email}",
-                "avatar_url": f"https://www.gravatar.com/avatar/{h}?d=mp",
-                "bio": "Verified Google / Gmail ecosystem account.",
-                "details": "Active Google account endpoint"
-            }
-        return None
-
-    @staticmethod
     async def get_public_breaches(email: str, client: Optional[httpx.AsyncClient] = None) -> List[Dict[str, Any]]:
         clean_email = email.strip().lower()
         if not clean_email or "@" not in clean_email:
@@ -274,7 +239,6 @@ class EmailPivotEngine:
                 cls.probe_github(email, client=client),
                 cls.probe_duolingo(email, client=client),
                 cls.probe_spotify(email, client=client),
-                cls.probe_google(email)
             ]
 
             results = await asyncio.gather(*tasks, return_exceptions=True)

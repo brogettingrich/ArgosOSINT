@@ -3,12 +3,18 @@ title = ArgosOSINT
 package.name = argososint
 package.domain = org.argos
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,html,css,js,json,db,txt
+source.include_exts = py,png,jpg,kv,atlas,html,css,js,json,db,txt,tflite,onnx
 source.include_patterns = app/**,data/**,requirements.txt
 version = 1.0
 
 # Dependencies: pure Starlette + uvicorn (zero pydantic / zero C-extensions)
-requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer
+# numpy, opencv, tflite-runtime: added for "Find With Face" (app/core/face_match.py).
+# Both opencv and tflite-runtime compile from source via NDK/CMake on this
+# build -- expect a much longer build time than before, and treat the first
+# attempt as a real debugging pass, not a guaranteed clean build (verified
+# recipes exist for all three, but tflite-runtime's is a niche one pinned to
+# an old TensorFlow 2.8.0, not a mainstream/heavily-traveled path).
+requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer,numpy,opencv,tflite-runtime
 
 # Android specific
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,WAKE_LOCK

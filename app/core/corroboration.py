@@ -18,10 +18,17 @@ def calculate_levenshtein(s1: str, s2: str) -> int:
         previous_row = current_row
     return previous_row[-1]
 
+# Mirrors app.core.face_match.SAME_PERSON_SIMILARITY -- duplicated rather
+# than imported so this module (used on every scan) doesn't pull in cv2/
+# tflite just to read a constant. Provisional, see that module's docstring.
+FACE_MATCH_THRESHOLD = 0.65
+
+
 def score_profile_corroboration(
-    seed_meta: Dict[str, Any], 
+    seed_meta: Dict[str, Any],
     candidate_meta: Dict[str, Any],
-    location: str = ""
+    location: str = "",
+    face_similarity: float = None,
 ) -> Dict[str, Any]:
     score = 0
     factors = []
@@ -70,6 +77,12 @@ def score_profile_corroboration(
     if candidate_meta.get("outbound_links"):
         score += 10
         factors.append("Outbound social cross-links present (+10)")
+
+    # 5. "Find With Face" avatar match (Max 30 pts) -- silent below threshold,
+    # per plan: not a separate low-confidence tier, just contributes nothing.
+    if face_similarity is not None and face_similarity >= FACE_MATCH_THRESHOLD:
+        score += 30
+        factors.append(f"Face match {int(face_similarity*100)}% (+30)")
 
     # No artificial floor - a found profile with zero corroborating signals
     # should honestly score near 0 rather than always being inflated to 20.

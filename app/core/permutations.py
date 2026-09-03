@@ -50,10 +50,21 @@ def generate_name_permutations(name: str, country_code: str = "") -> List[str]:
         return variants
 
     first, last = parts[0], parts[-1]
+    # No-delimiter concatenation goes FIRST -- this is index 0, which
+    # generate_permutations() marks as the guaranteed "is_seed" guess (always
+    # scanned, regardless of the permutations checkbox). Real people
+    # overwhelmingly claim the plain concatenation when it's available
+    # (that's the actual handle convention on every major platform), so THAT
+    # should be the guaranteed guess -- not the underscore variant that used
+    # to sit here. Confirmed against a real account: "kyliejenner" (this
+    # variant) finds her real profile; "kylie_jenner" (the old index 0)
+    # returns not-found. Previously, if permutations were off, the tool
+    # would only ever try the underscore version and silently miss real
+    # people entirely.
     variants.extend([
+        f"{first}{last}",
         f"{first}_{last}",
         f"{first}.{last}",
-        f"{first}{last}",
         f"{first[0]}_{last}",
         f"{first[0]}.{last}",
         f"{first[0]}{last}",

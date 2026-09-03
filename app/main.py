@@ -15,6 +15,7 @@ from app.core.permutations import generate_permutations, resolve_country
 from app.core.ai_engine import AIEngine, DEFAULT_GROQ_MODEL, DEFAULT_LOCAL_HOST, DEFAULT_LOCAL_MODEL
 from app.core.corroboration import score_profile_corroboration
 from app.core.email_pivot import EmailPivotEngine
+from app.core.http_client import create_async_client, fetch_with_retry
 from app.modules.username_probe import scan_usernames_async, SITES_DB
 from app.modules.email_probe import probe_email_intelligence
 from app.modules.phone_probe import analyze_phone_number
@@ -96,6 +97,7 @@ async def scan_stream_endpoint(request: Request):
         )
         yield f"data: {json.dumps({'type': 'init', 'dossier_id': dossier_id})}\n\n"
 
+        _consume_pending_face_seed(dossier_id)
         discovered_findings = []
 
         # 1. Email Intelligence & Deep Account Pivots
@@ -163,6 +165,13 @@ async def scan_stream_endpoint(request: Request):
 
         seed_meta = {"username": exact_seeds[0] if exact_seeds else "", "display_name": names_list[0] if names_list else ""}
 
+        # "Find With Face" -- optional signal, only active if a seed photo was
+        # uploaded this session. face_client stays None (skipped everywhere
+        # below) if there's no seed embedding, so this costs nothing when the
+        # feature isn't in use.
+        seed_face_emb, seed_face_flip = _load_seed_face_embedding(dossier_id)
+        face_client = create_async_client() if seed_face_emb is not None else None
+
         country_info = resolve_country(location)
         t_country = country_info["code"] if country_info else ""
         active_cat_len = sum(1 for s in SITES_DB if not s.get("country") or (t_country and s.get("country") == t_country))
@@ -180,7 +189,13 @@ async def scan_stream_endpoint(request: Request):
                         "bio": result.get("metadata", {}).get("bio"),
                         "outbound_links": result.get("metadata", {}).get("outbound_links", [])
                     }
-                    corrob = score_profile_corroboration(seed_meta, cand_meta, location=location)
+                    face_similarity = None
+                    if face_client is not None:
+                        face_similarity = await _face_similarity_for_avatar(
+                            face_client, result.get("metadata", {}).get("avatar_url"),
+                            seed_face_emb, seed_face_flip,
+                        )
+                    corrob = score_profile_corroboration(seed_meta, cand_meta, location=location, face_similarity=face_similarity)
                     result["corroboration"] = corrob
                     result["is_seed"] = True
                     discovered_findings.append(result)
@@ -200,7 +215,13 @@ async def scan_stream_endpoint(request: Request):
                         "bio": result.get("metadata", {}).get("bio"),
                         "outbound_links": result.get("metadata", {}).get("outbound_links", [])
                     }
-                    corrob = score_profile_corroboration(seed_meta, cand_meta, location=location)
+                    face_similarity = None
+                    if face_client is not None:
+                        face_similarity = await _face_similarity_for_avatar(
+                            face_client, result.get("metadata", {}).get("avatar_url"),
+                            seed_face_emb, seed_face_flip,
+                        )
+                    corrob = score_profile_corroboration(seed_meta, cand_meta, location=location, face_similarity=face_similarity)
                     result["corroboration"] = corrob
                     result["is_seed"] = False
                     discovered_findings.append(result)
@@ -208,6 +229,9 @@ async def scan_stream_endpoint(request: Request):
 
                 pct = int((completed_probes / total_probes) * 100)
                 yield f"data: {json.dumps({'type': 'probe_result', 'result': result, 'progress': {'percent': pct, 'done': completed_probes, 'total': total_probes}})}\n\n"
+
+        if face_client is not None:
+            await face_client.aclose()
 
         # AI OSINT Executive Briefing
         settings = repo.get_all_settings()
@@ -306,11 +330,140 @@ async def open_external_url(request: Request):
             pass  # Non-Android environment — silently ignore
     return JSONResponse({"status": "ok"})
 
+def _decode_embedding_pair(b64, b64_flip):
+    try:
+        import base64
+        import numpy as np
+        if not b64 or not b64_flip:
+            return None, None
+        emb = np.frombuffer(base64.b64decode(b64), dtype="float32")
+        flip = np.frombuffer(base64.b64decode(b64_flip), dtype="float32")
+        return emb, flip
+    except Exception:
+        return None, None
+
+
+def _consume_pending_face_seed(dossier_id):
+    """Called once, right when a new dossier is created for a scan. Moves
+    whatever seed photo was staged via /api/face/seed onto THIS dossier
+    specifically, then clears the staging slot -- so a later scan for a
+    different target never silently inherits an old, unrelated seed photo
+    just because nobody re-uploaded one."""
+    b64 = repo.get_setting("face_seed_embedding_pending", "")
+    b64_flip = repo.get_setting("face_seed_embedding_pending_flipped", "")
+    if not b64 or not b64_flip:
+        return
+    repo.set_setting(f"face_seed_embedding:{dossier_id}", b64)
+    repo.set_setting(f"face_seed_embedding_flipped:{dossier_id}", b64_flip)
+    repo.set_setting("face_seed_embedding_pending", "")
+    repo.set_setting("face_seed_embedding_pending_flipped", "")
+
+
+def _load_seed_face_embedding(dossier_id):
+    """Returns (embedding, flipped_embedding) for THIS dossier specifically,
+    or (None, None) if this investigation never had a seed photo -- face
+    matching is always an optional signal, never something a scan can fail
+    because of."""
+    b64 = repo.get_setting(f"face_seed_embedding:{dossier_id}", "")
+    b64_flip = repo.get_setting(f"face_seed_embedding_flipped:{dossier_id}", "")
+    return _decode_embedding_pair(b64, b64_flip)
+
+async def _face_similarity_for_avatar(client, avatar_url, seed_emb, seed_flip):
+    """Fetches a candidate's avatar and scores it against the seed photo.
+    Returns a float similarity, or None on ANY failure (no avatar, fetch
+    failed, no face in the avatar, feature unavailable on this build) --
+    same "optional signal, never breaks the scan" contract as above."""
+    if not avatar_url or seed_emb is None:
+        return None
+    try:
+        from app.core.face_match import embed_bgr_image, best_similarity
+        import cv2
+        import numpy as np
+
+        resp = await fetch_with_retry(client, avatar_url)
+        if resp.status_code != 200 or not resp.content:
+            return None
+
+        def _decode_and_embed(raw_bytes):
+            # Runs in a worker thread (see asyncio.to_thread below) -- face
+            # detection + tflite inference is synchronous CPU-bound work with
+            # no await points, so calling it directly on the event loop would
+            # stall every other concurrently-running site-probe for the ~100-
+            # 400ms this takes. Measured this stalling directly before this
+            # fix: a concurrent ticker lost half its expected ticks during a
+            # single embed call run the naive way.
+            arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if img is None:
+                return None
+            return embed_bgr_image(img)
+
+        result = await asyncio.to_thread(_decode_and_embed, resp.content)
+        if result is None:
+            return None
+        cand_emb, cand_flip = result
+        return best_similarity(seed_emb, seed_flip, cand_emb, cand_flip)
+    except Exception:
+        return None
+
+async def face_seed_endpoint(request: Request):
+    """Receives an uploaded seed photo for "Find With Face", embeds it, and
+    stores the embedding for use during the next scan. Feature degrades
+    gracefully (clear error, not a crash) if opencv/tflite aren't installed --
+    see app.core.face_match's own docstring."""
+    try:
+        form = await request.form()
+        upload = form.get("photo")
+        if upload is None:
+            return JSONResponse({"status": "error", "message": "No photo received."}, status_code=400)
+        raw_bytes = await upload.read()
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"Could not read upload: {e}"}, status_code=400)
+
+    try:
+        from app.core.face_match import embed_photo_bytes_with_details, NoFaceError
+    except Exception as e:
+        return JSONResponse({
+            "status": "error",
+            "message": "Face matching isn't available on this build.",
+        }, status_code=503)
+
+    try:
+        # Offloaded to a thread for the same reason as the scan-side fix --
+        # this is synchronous CPU-bound work that would otherwise stall the
+        # whole event loop (measured directly, see _face_similarity_for_avatar's
+        # comment) while it runs.
+        details = await asyncio.to_thread(embed_photo_bytes_with_details, raw_bytes)
+    except NoFaceError as e:
+        return JSONResponse({"status": "error", "message": str(e)})
+    except Exception as e:
+        import traceback
+        print(f"[ArgosOSINT] Face embed error: {e}\n{traceback.format_exc()}")
+        return JSONResponse({"status": "error", "message": "Could not process this photo."}, status_code=500)
+
+    # Staged, not permanent -- _consume_pending_face_seed() moves this onto
+    # the specific dossier a scan creates, then clears these, so an old seed
+    # photo never silently carries over into an unrelated later investigation.
+    import base64
+    embedding, flipped = details["embedding"], details["flipped"]
+    repo.set_setting("face_seed_embedding_pending", base64.b64encode(embedding.astype("float32").tobytes()).decode("ascii"))
+    repo.set_setting("face_seed_embedding_pending_flipped", base64.b64encode(flipped.astype("float32").tobytes()).decode("ascii"))
+
+    crop_b64 = base64.b64encode(details["crop_jpeg"]).decode("ascii") if details["crop_jpeg"] else None
+    return JSONResponse({
+        "status": "ok",
+        "confidence_pct": round(details["detection_confidence"] * 100),
+        "blur_variance": round(details["blur_variance"]),
+        "faces_in_photo": details["faces_in_photo"],
+        "analyzed_crop_jpeg_b64": crop_b64,
+    })
+
 routes = [
     Route("/", endpoint=read_root, methods=["GET"]),
     Route("/api/permutations", endpoint=get_permutations_endpoint, methods=["POST"]),
     Route("/api/scan/stream", endpoint=scan_stream_endpoint, methods=["GET"]),
     Route("/api/open-external", endpoint=open_external_url, methods=["GET"]),
+    Route("/api/face/seed", endpoint=face_seed_endpoint, methods=["POST"]),
     Route("/api/settings", endpoint=get_settings_endpoint, methods=["GET"]),
     Route("/api/settings", endpoint=save_settings_endpoint, methods=["POST"]),
     Route("/api/settings/health", endpoint=get_settings_health, methods=["GET"]),
