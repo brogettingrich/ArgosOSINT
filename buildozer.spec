@@ -16,6 +16,13 @@ version = 1.0
 # an old TensorFlow 2.8.0, not a mainstream/heavily-traveled path).
 requirements = python3,kivy,pyjnius,android,starlette,uvicorn,httpx,python-multipart,dnspython,phonenumbers,certifi,anyio,sniffio,h11,idna,charset-normalizer,numpy,opencv,tflite-runtime
 
+# Local override of p4a's bundled numpy recipe -- see
+# p4a_local_recipes/numpy/__init__.py for why (a confirmed upstream numpy
+# bug: unique.cpp is missing #include <unordered_map>, fails to compile
+# under Android NDK's strict libc++). Patch verified to apply cleanly
+# against the actual pinned numpy source before this was pushed.
+p4a.local_recipes = p4a_local_recipes
+
 # Android specific
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,WAKE_LOCK
 android.api = 33

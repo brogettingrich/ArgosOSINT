@@ -1,0 +1,13 @@
+--- a/numpy/_core/src/multiarray/unique.cpp
++++ b/numpy/_core/src/multiarray/unique.cpp
+@@ -1,9 +1,10 @@
+ #define NPY_NO_DEPRECATED_API NPY_API_VERSION
+ #define _MULTIARRAYMODULE
+
+ #include <Python.h>
+
++#include <unordered_map>
+ #include <unordered_set>
+ #include <functional>
+
+ #include <numpy/npy_common.h>
