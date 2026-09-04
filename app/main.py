@@ -330,6 +330,22 @@ async def open_external_url(request: Request):
             pass  # Non-Android environment — silently ignore
     return JSONResponse({"status": "ok"})
 
+async def check_face_native_endpoint(request: Request):
+    """Reports whether native Android photo picking is available in this environment."""
+    from app.android_bridge import is_android_environment
+    return JSONResponse({"is_native": is_android_environment()})
+
+async def pick_face_native_endpoint(request: Request):
+    """Queues a request for the native Android layer to launch the Photo Picker Intent."""
+    from app.android_bridge import is_android_environment, pending_picker_requests
+    if is_android_environment():
+        try:
+            pending_picker_requests.put_nowait(True)
+            return JSONResponse({"status": "queued"})
+        except Exception as e:
+            return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+    return JSONResponse({"status": "not_supported", "message": "Not running on Android"}, status_code=400)
+
 def _decode_embedding_pair(b64, b64_flip):
     try:
         import base64
@@ -463,6 +479,8 @@ routes = [
     Route("/api/permutations", endpoint=get_permutations_endpoint, methods=["POST"]),
     Route("/api/scan/stream", endpoint=scan_stream_endpoint, methods=["GET"]),
     Route("/api/open-external", endpoint=open_external_url, methods=["GET"]),
+    Route("/api/face/is-native", endpoint=check_face_native_endpoint, methods=["GET"]),
+    Route("/api/face/pick-native", endpoint=pick_face_native_endpoint, methods=["POST"]),
     Route("/api/face/seed", endpoint=face_seed_endpoint, methods=["POST"]),
     Route("/api/settings", endpoint=get_settings_endpoint, methods=["GET"]),
     Route("/api/settings", endpoint=save_settings_endpoint, methods=["POST"]),

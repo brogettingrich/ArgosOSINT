@@ -110,6 +110,107 @@ def _url_dispatcher():
 threading.Thread(target=_url_dispatcher, daemon=True).start()
 
 
+# ── 3b. Native photo picker dispatcher ───────────────────────────
+PICK_IMAGE_REQUEST_CODE = 4242
+
+def _handle_picked_image(intent_data, result_code):
+    global _webview
+    if result_code != -1 or not intent_data:
+        if _webview is not None:
+            try:
+                from android.runnable import run_on_ui_thread  # type: ignore
+
+                @run_on_ui_thread
+                def _cancel():
+                    _webview.evaluateJavascript(
+                        "if (window.onNativePhotoCancelled) { window.onNativePhotoCancelled(); }",
+                        None,
+                    )
+
+                _cancel()
+            except Exception:
+                pass
+        return
+
+    try:
+        from jnius import autoclass  # type: ignore
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        BitmapFactory = autoclass('android.graphics.BitmapFactory')
+        CompressFormat = autoclass('android.graphics.Bitmap$CompressFormat')
+        ByteArrayOutputStream = autoclass('java.io.ByteArrayOutputStream')
+        Base64 = autoclass('android.util.Base64')
+
+        uri = intent_data.getData()
+        if not uri:
+            return
+
+        activity = PythonActivity.mActivity
+        resolver = activity.getContentResolver()
+        stream = resolver.openInputStream(uri)
+        if not stream:
+            return
+
+        bitmap = BitmapFactory.decodeStream(stream)
+        stream.close()
+        if not bitmap:
+            return
+
+        baos = ByteArrayOutputStream()
+        bitmap.compress(CompressFormat.JPEG, 92, baos)
+        raw_b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+        bitmap.recycle()
+
+        if _webview is not None:
+            from android.runnable import run_on_ui_thread  # type: ignore
+
+            @run_on_ui_thread
+            def _push():
+                js_code = f"if (window.onNativePhotoPicked) {{ window.onNativePhotoPicked('{raw_b64}', 'photo.jpg'); }}"
+                _webview.evaluateJavascript(js_code, None)
+
+            _push()
+            print('[ArgosOSINT] Photo picked and injected into WebView successfully')
+    except Exception as e:
+        import traceback
+        print(f'[ArgosOSINT] Error processing picked photo: {e}\n{traceback.format_exc()}')
+
+
+def _picker_dispatcher():
+    try:
+        from jnius import autoclass  # type: ignore
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        Intent = autoclass('android.content.Intent')
+        from app.android_bridge import pending_picker_requests
+
+        print('[ArgosOSINT] Photo picker dispatcher ready')
+        while True:
+            try:
+                _ = pending_picker_requests.get(timeout=1.0)
+                try:
+                    activity = PythonActivity.mActivity
+                    intent = Intent(Intent.ACTION_GET_CONTENT)
+                    intent.setType("image/*")
+                    intent.addCategory(Intent.CATEGORY_OPENABLE)
+
+                    from android.runnable import run_on_ui_thread  # type: ignore
+
+                    @run_on_ui_thread
+                    def _launch():
+                        chooser = Intent.createChooser(intent, "Select Face Photo")
+                        activity.startActivityForResult(chooser, PICK_IMAGE_REQUEST_CODE)
+
+                    _launch()
+                    print('[ArgosOSINT] Launched native photo picker Intent')
+                except Exception as ex:
+                    print(f'[ArgosOSINT] Photo picker launch error: {ex}')
+            except queue.Empty:
+                continue
+    except Exception as e:
+        print(f'[ArgosOSINT] Photo picker dispatcher init error: {e}')
+
+threading.Thread(target=_picker_dispatcher, daemon=True).start()
+
+
 # ── 4. Kivy shell + status UI ────────────────────────────────────
 from kivy.app             import App           # type: ignore
 from kivy.clock           import Clock         # type: ignore
@@ -275,6 +376,24 @@ class ArgosApp(App):
     def on_start(self):
         from kivy.core.window import Window  # type: ignore
         Window.bind(on_keyboard=self.on_keyboard)
+
+        # Bind Android activity result listener for photo picking
+        if sys.platform == 'android' or 'ANDROID_ROOT' in os.environ:
+            try:
+                from android.activity import bind as android_activity_bind  # type: ignore
+
+                def _activity_callback(request_code, result_code, intent_data):
+                    if request_code == PICK_IMAGE_REQUEST_CODE:
+                        threading.Thread(
+                            target=_handle_picked_image,
+                            args=(intent_data, result_code),
+                            daemon=True,
+                        ).start()
+
+                android_activity_bind(on_activity_result=_activity_callback)
+                print('[ArgosOSINT] on_activity_result bound for photo picker')
+            except Exception as e:
+                print(f'[ArgosOSINT] Activity result bind error: {e}')
 
         self.status_screen.set_status('Starting backend server...')
 

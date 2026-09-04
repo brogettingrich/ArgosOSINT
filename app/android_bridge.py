@@ -12,3 +12,11 @@ import queue
 
 # Thread-safe queue for URLs that should be opened externally via Android Intent
 pending_external_urls: queue.Queue = queue.Queue()
+
+# Thread-safe queue for photo-picker requests triggered from the WebView UI
+pending_picker_requests: queue.Queue = queue.Queue()
+
+def is_android_environment() -> bool:
+    import sys
+    import os
+    return sys.platform == 'android' or 'ANDROID_ROOT' in os.environ

@@ -20,4 +20,8 @@ Thumbs.db
 # Buildozer / Android build artifacts
 .buildozer/
 bin/
+*.zip
+job_log*.txt
+downloaded_apk/
+release_apk/
 

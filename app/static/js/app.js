@@ -41,10 +41,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
- * "Find With Face" seed-photo picker -- Step 1 only: pick a photo, preview it.
- * Nothing is uploaded or matched yet; that's wired in once the backend
- * endpoint exists. The picked File is kept on window.faceSeedFile so a later
- * step can send it without re-plumbing this part.
+ * "Find With Face" seed-photo picker.
+ *
+ * On desktop browsers, clicking the button invokes the standard fileInput.click().
+ * On native Android, Android's WebView has no WebChromeClient attached, so fileInput.click()
+ * is silently ignored. For Android, we request /api/face/pick-native to launch the native
+ * Intent.ACTION_GET_CONTENT chooser. The result is returned via window.onNativePhotoPicked.
  */
 function setupFaceSeedPicker() {
   const btn = document.getElementById('btn-find-with-face');
@@ -56,7 +58,34 @@ function setupFaceSeedPicker() {
   const statusLabel = document.getElementById('face-seed-status');
   if (!btn || !fileInput) return;
 
-  btn.addEventListener('click', () => fileInput.click());
+  // Check whether running in native Android environment
+  let isNativeAndroid = false;
+  fetch('/api/face/is-native')
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.is_native) isNativeAndroid = true;
+    })
+    .catch(() => {});
+
+  btn.addEventListener('click', async () => {
+    if (isNativeAndroid) {
+      if (statusLabel) {
+        statusLabel.textContent = 'Opening gallery…';
+        statusLabel.className = 'face-seed-status pending';
+      }
+      try {
+        const resp = await fetch('/api/face/pick-native', { method: 'POST' });
+        if (!resp.ok) {
+          // Fallback to standard input if native pick request fails
+          fileInput.click();
+        }
+      } catch (err) {
+        fileInput.click();
+      }
+    } else {
+      fileInput.click();
+    }
+  });
 
   fileInput.addEventListener('change', () => {
     const file = fileInput.files && fileInput.files[0];
@@ -74,6 +103,41 @@ function setupFaceSeedPicker() {
     };
     reader.readAsDataURL(file);
   });
+
+  // Global callback invoked from native Android (main.py -> evaluateJavascript)
+  window.onNativePhotoPicked = function(base64Data, filename) {
+    try {
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/jpeg' });
+      const file = new File([blob], filename || 'photo.jpg', { type: 'image/jpeg' });
+
+      window.faceSeedFile = file;
+      thumb.src = 'data:image/jpeg;base64,' + base64Data;
+      filenameLabel.textContent = 'Uploaded';
+      preview.style.display = 'flex';
+      btn.style.display = 'none';
+      uploadFaceSeed(file, statusLabel, thumb);
+    } catch (err) {
+      console.error('Error handling native photo:', err);
+      if (statusLabel) {
+        statusLabel.textContent = 'Failed to load photo';
+        statusLabel.className = 'face-seed-status error';
+      }
+    }
+  };
+
+  // Global callback invoked if native photo picker is cancelled
+  window.onNativePhotoCancelled = function() {
+    if (statusLabel && statusLabel.textContent === 'Opening gallery…') {
+      statusLabel.textContent = '';
+      statusLabel.className = 'face-seed-status';
+    }
+  };
 
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
