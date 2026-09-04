@@ -122,10 +122,11 @@ def _handle_picked_image(intent_data, result_code):
 
                 @run_on_ui_thread
                 def _cancel():
-                    _webview.evaluateJavascript(
-                        "if (window.onNativePhotoCancelled) { window.onNativePhotoCancelled(); }",
-                        None,
-                    )
+                    js_code = "if (window.onNativePhotoCancelled) { window.onNativePhotoCancelled(); }"
+                    try:
+                        _webview.evaluateJavascript(js_code, None)
+                    except Exception:
+                        _webview.loadUrl(f"javascript:{js_code}")
 
                 _cancel()
             except Exception:
@@ -156,8 +157,8 @@ def _handle_picked_image(intent_data, result_code):
             return
 
         baos = ByteArrayOutputStream()
-        bitmap.compress(CompressFormat.JPEG, 92, baos)
-        raw_b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+        bitmap.compress(CompressFormat.JPEG, 90, baos)
+        raw_b64 = Base64.encodeToString(baos.toByteArray(), 2)  # 2 == Base64.NO_WRAP
         bitmap.recycle()
 
         if _webview is not None:
@@ -166,7 +167,10 @@ def _handle_picked_image(intent_data, result_code):
             @run_on_ui_thread
             def _push():
                 js_code = f"if (window.onNativePhotoPicked) {{ window.onNativePhotoPicked('{raw_b64}', 'photo.jpg'); }}"
-                _webview.evaluateJavascript(js_code, None)
+                try:
+                    _webview.evaluateJavascript(js_code, None)
+                except Exception:
+                    _webview.loadUrl(f"javascript:{js_code}")
 
             _push()
             print('[ArgosOSINT] Photo picked and injected into WebView successfully')
@@ -196,8 +200,7 @@ def _picker_dispatcher():
 
                     @run_on_ui_thread
                     def _launch():
-                        chooser = Intent.createChooser(intent, "Select Face Photo")
-                        activity.startActivityForResult(chooser, PICK_IMAGE_REQUEST_CODE)
+                        activity.startActivityForResult(intent, PICK_IMAGE_REQUEST_CODE)
 
                     _launch()
                     print('[ArgosOSINT] Launched native photo picker Intent')
